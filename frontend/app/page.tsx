@@ -8,7 +8,11 @@ export default function HomePage() {
   const { data: session } = useSession();
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center p-6">
+    <main
+      id="main-content"
+      tabIndex={-1}
+      className="min-h-screen flex flex-col items-center justify-center p-6 pt-24"
+    >
       <div className="max-w-2xl w-full text-center space-y-8">
         <h1 className="text-4xl font-bold tracking-tight">
           Welcome to StellarHunts
@@ -67,6 +71,6 @@ export default function HomePage() {
           </div>
         )}
       </div>
-    </div>
+    </main>
   );
 }

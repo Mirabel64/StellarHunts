@@ -8,7 +8,11 @@ export default function PuzzleRoadmapPage() {
   const { data, isLoading, error, refetch } = useRoadmap();
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-[#0f0c29] via-[#302b63] to-[#24243e] text-white py-12 px-4 md:px-16">
+    <main
+      id="main-content"
+      tabIndex={-1}
+      className="min-h-screen bg-gradient-to-b from-[#0f0c29] via-[#302b63] to-[#24243e] text-white py-12 px-4 md:px-16 pt-24"
+    >
       <h1 className="text-4xl md:text-5xl font-bold text-center mb-12">
         Puzzle Roadmap
       </h1>

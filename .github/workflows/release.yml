@@ -1,12 +1,20 @@
-# Release workflow — triggered by a pushed semver tag (vX.Y.Z)
+# Release workflow — triggered by a pushed semver tag (vX.Y.Z), or run
+# manually with an explicit version.
 #
-# Usage:
-#   1. Decide on the next version per semver (MAJOR.MINOR.PATCH).
-#   2. Create and push the tag:
-#         git tag vX.Y.Z
-#         git push origin vX.Y.Z
-#   3. This workflow will build, create a GitHub Release, and
-#      generate a changelog from conventional-commit messages.
+# Usage (tag-driven, preferred):
+#   1. Prepare the release locally:
+#         npm run release:prepare -- minor
+#   2. Review the version bump + CHANGELOG.md diff, commit, then tag:
+#         git commit -am "chore(release): vX.Y.Z"
+#         git tag -a vX.Y.Z -m "Release vX.Y.Z"
+#         git push origin main --follow-tags
+#   3. This workflow builds every artifact, validates that the tag matches the
+#      workspace versions, generates the release notes from conventional
+#      commits, and publishes the GitHub Release.
+#
+# The manual trigger is for re-running a release (for example after fixing a
+# build failure) without moving the tag. It refuses to publish when the
+# workspace versions do not already equal the requested version.
 
 name: Release
 
@@ -14,6 +22,12 @@ on:
   push:
     tags:
       - "v[0-9]+.[0-9]+.[0-9]+"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release (x.y.z, without the leading v)"
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -29,10 +43,27 @@ jobs:
           # Fetch all history so git-cliff / auto-changelog can read commits
           fetch-depth: 0
 
-      - name: Query tag metadata
+      - name: Resolve release version
         id: tag
+        env:
+          INPUT_VERSION: ${{ github.event.inputs.version }}
+          REF_NAME: ${{ github.ref_name }}
         run: |
-          echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          if [ -n "$INPUT_VERSION" ]; then
+            VERSION="${INPUT_VERSION#v}"
+          else
+            VERSION="${REF_NAME#v}"
+          fi
+
+          if ! printf '%s' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::'$VERSION' is not a semver version (expected x.y.z)"
+            exit 1
+          fi
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Verify workspace versions match the release
+        run: node scripts/check-release-version.mjs "${{ steps.tag.outputs.version }}"
 
       # ── Install toolchains ────────────────────────────────
       - name: Install Rust toolchain
@@ -84,65 +115,27 @@ jobs:
           done
 
       # ── Generate changelog ────────────────────────────────
+      # Same generator developers run locally, so the reviewed
+      # CHANGELOG.md section and the published release notes cannot
+      # diverge. See scripts/changelog.mjs.
       - name: Generate changelog
-        id: changelog
         run: |
-          # Build a changelog from conventional-commit messages.
-          # Groups commits by type (feat, fix, chore, docs, ci, etc.)
-          # for readable release notes.
-          PREV_TAG=$(git describe --tags --abbrev=0 "${GITHUB_REF_NAME}^" 2>/dev/null || echo "")
-          if [ -z "$PREV_TAG" ]; then
-            RANGE="${GITHUB_REF_NAME}"
-          else
-            RANGE="${PREV_TAG}..${GITHUB_REF_NAME}"
+          node scripts/changelog.mjs \
+            --version "${{ steps.tag.outputs.version }}" \
+            --notes > /tmp/release-notes.md
+
+          if [ ! -s /tmp/release-notes.md ]; then
+            echo "::error::Changelog generation produced no content"
+            exit 1
           fi
-
-          {
-            echo "changelog<<EOF"
-            echo "# StellarHunts ${{ steps.tag.outputs.version }}"
-            echo ""
-
-            # Helper: print a section if there are matching commits
-            print_section() {
-              local label="$1" prefix="$2"
-              commits=$(git log "${RANGE}" --no-merges --pretty=format:"- %s (%h)" --grep="^${prefix}")
-              if [ -n "$commits" ]; then
-                echo ""
-                echo "### ${label}"
-                echo ""
-                echo "$commits"
-              fi
-            }
-
-            print_section "🚀 Features" "feat"
-            print_section "🐛 Bug Fixes" "fix"
-            print_section "📖 Documentation" "docs"
-            print_section "♻️ Refactoring" "refactor"
-            print_section "🧪 Tests" "test"
-            print_section "🔧 CI/CD" "ci"
-            print_section "📦 Chores" "chore"
-            print_section "💄 Style" "style"
-
-            # If no conventional commits matched, fall back to chronological list
-            ALL=$(git log "${RANGE}" --no-merges --pretty=format:"- %s (%h)")
-            if [ -z "$ALL" ]; then
-              echo ""
-              echo "No changes since previous release."
-            fi
-
-            echo ""
-            echo "**Full Changelog**: https://github.com/${{ github.repository }}/compare/${PREV_TAG:+$PREV_TAG...}${GITHUB_REF_NAME}"
-            echo "EOF"
-          } >> "$GITHUB_OUTPUT"
-        shell: bash
 
       # ── Create GitHub Release ─────────────────────────────
       - name: Create Release
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
-          tag_name: ${{ github.ref_name }}
+          tag_name: v${{ steps.tag.outputs.version }}
           name: v${{ steps.tag.outputs.version }}
-          body: ${{ steps.changelog.outputs.changelog }}
+          body_path: /tmp/release-notes.md
           draft: false
           prerelease: false
           generate_release_notes: false

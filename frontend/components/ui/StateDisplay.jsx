@@ -25,9 +25,12 @@ export function ErrorState({ error, onRetry, className }) {
       : error?.message || "Something went wrong. Please try again.";
 
   return (
-    <div className={`flex flex-col items-center justify-center gap-4 py-12 ${className ?? ""}`}>
+    <div
+      role="alert"
+      className={`flex flex-col items-center justify-center gap-4 py-12 ${className ?? ""}`}
+    >
       <div className="rounded-full bg-red-50 p-3 dark:bg-red-950">
-        <AlertCircle className="h-6 w-6 text-red-500" />
+        <AlertCircle aria-hidden="true" className="h-6 w-6 text-red-500" />
       </div>
       <div className="text-center">
         <p className="text-sm font-medium text-foreground">Error</p>
@@ -35,10 +38,11 @@ export function ErrorState({ error, onRetry, className }) {
       </div>
       {onRetry && (
         <button
+          type="button"
           onClick={onRetry}
           className="inline-flex items-center gap-2 rounded-md bg-red-50 px-4 py-2 text-sm font-medium text-red-600 transition-colors hover:bg-red-100 dark:bg-red-950 dark:text-red-400 dark:hover:bg-red-900"
         >
-          <RefreshCw className="h-4 w-4" />
+          <RefreshCw aria-hidden="true" className="h-4 w-4" />
           Try again
         </button>
       )}
@@ -53,7 +57,11 @@ export function EmptyState({ title = "Nothing here yet", description, icon: Icon
   return (
     <div className={`flex flex-col items-center justify-center gap-4 py-12 ${className ?? ""}`}>
       <div className="rounded-full bg-gray-100 p-3 dark:bg-gray-800">
-        {Icon ? <Icon className="h-6 w-6 text-gray-400" /> : <Inbox className="h-6 w-6 text-gray-400" />}
+        {Icon ? (
+          <Icon aria-hidden="true" className="h-6 w-6 text-gray-400" />
+        ) : (
+          <Inbox aria-hidden="true" className="h-6 w-6 text-gray-400" />
+        )}
       </div>
       <div className="text-center">
         <p className="text-sm font-medium text-foreground">{title}</p>
@@ -89,8 +97,8 @@ export default function ApiStateDisplay({
   loadingMessage,
   emptyTitle,
   emptyDescription,
-  emptyIcon,
-  emptyAction,
+  emptyIcon = null,
+  emptyAction = null,
   children,
 }) {
   if (isLoading) return <LoadingState message={loadingMessage} />;

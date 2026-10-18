@@ -14,7 +14,6 @@ export default function Pagination({ currentPage, totalPages, onPageChange }) {
 
   return (
     <nav
-      role="navigation"
       aria-label="Pagination"
       className="flex flex-wrap items-center justify-center gap-4 mt-10"
     >
@@ -29,27 +28,28 @@ export default function Pagination({ currentPage, totalPages, onPageChange }) {
         Previous
       </button>
 
-      <div className="flex items-center gap-1" role="list">
+      <ul className="flex items-center gap-1">
         {pages.map((pageNum) => {
           const isCurrent = pageNum === currentPage;
           return (
-            <button
-              key={pageNum}
-              type="button"
-              onClick={() => onPageChange(pageNum)}
-              aria-current={isCurrent ? "page" : undefined}
-              aria-label={`Page ${pageNum}`}
-              className={`px-3 py-2 rounded ${
-                isCurrent
-                  ? "bg-blue-600 text-white"
-                  : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-              }`}
-            >
-              {pageNum}
-            </button>
+            <li key={pageNum}>
+              <button
+                type="button"
+                onClick={() => onPageChange(pageNum)}
+                aria-current={isCurrent ? "page" : undefined}
+                aria-label={`Page ${pageNum}`}
+                className={`px-3 py-2 rounded ${
+                  isCurrent
+                    ? "bg-blue-600 text-white"
+                    : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                }`}
+              >
+                {pageNum}
+              </button>
+            </li>
           );
         })}
-      </div>
+      </ul>
 
       <span className="text-gray-600" aria-live="polite">
         Page {currentPage} of {totalPages}

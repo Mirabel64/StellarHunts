@@ -6,17 +6,30 @@ StellarHunts uses [Semantic Versioning](https://semver.org/) and tags to trigger
 
 1. Decide the next version: bump **MAJOR** for breaking changes, **MINOR** for new
    features, **PATCH** for bug fixes.
-2. Create and push the annotated tag:
+2. From a clean `main`, prepare the version bump and changelog:
    ```bash
-   git tag -a vX.Y.Z -m "Release vX.Y.Z"
-   git push origin vX.Y.Z
+   npm run release:prepare -- patch   # or minor / major / x.y.z
    ```
-3. The [`Release`](.github/workflows/release.yml) workflow will automatically:
+   This updates the version in the root, backend, and frontend `package.json`
+   files and inserts the generated section into `CHANGELOG.md`. It refuses to
+   run on a dirty tree or when the workspace versions disagree.
+3. Review the diff — especially `CHANGELOG.md` — and commit, tag, and push:
+   ```bash
+   git commit -am "chore(release): vX.Y.Z"
+   git tag -a vX.Y.Z -m "Release vX.Y.Z"
+   git push origin main --follow-tags
+   ```
+4. The [`Release`](.github/workflows/release.yml) workflow will automatically:
+   - Verify that the tag matches all workspace versions
    - Build the frontend, backend, and on-chain (Soroban) artifacts
-   - Generate a release changelog from conventional-commit messages
+   - Generate the release notes from conventional-commit messages (the same
+     generator used locally), so the published notes match `CHANGELOG.md`
    - Attach the compiled `.wasm` contract files to a GitHub Release
 
-4. Before cutting a release, ensure the error codes documentation is up to date:
+   The workflow can also be started manually with an explicit version to
+   re-run a failed release; it will not move an existing tag.
+
+5. Before cutting a release, ensure the error codes documentation is up to date:
    - Check `onchain/docs/error-codes.md` against the current error enums
    - Verify all error codes and entry points are documented
    - Update the table if any error codes were added or modified

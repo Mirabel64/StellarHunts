@@ -27,21 +27,29 @@ export default function InviteFriendsPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-black via-purple-900 to-black">
+      <main
+        id="main-content"
+        tabIndex={-1}
+        className="min-h-screen bg-gradient-to-br from-black via-purple-900 to-black pt-16"
+      >
         <div className="max-w-6xl mx-auto px-6 py-8">
           <LoadingState message="Loading your referrals..." />
         </div>
-      </div>
+      </main>
     );
   }
 
   if (error) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-black via-purple-900 to-black">
+      <main
+        id="main-content"
+        tabIndex={-1}
+        className="min-h-screen bg-gradient-to-br from-black via-purple-900 to-black pt-16"
+      >
         <div className="max-w-6xl mx-auto px-6 py-8">
           <ErrorState error={error} onRetry={() => fetchReferralData(userId)} />
         </div>
-      </div>
+      </main>
     );
   }
 
@@ -49,7 +57,11 @@ export default function InviteFriendsPage() {
   const remaining = Math.max(nextMilestone - referralStats.totalInvites, 0);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-black via-purple-900 to-black">
+    <main
+      id="main-content"
+      tabIndex={-1}
+      className="min-h-screen bg-gradient-to-br from-black via-purple-900 to-black pt-16"
+    >
       <div className="max-w-6xl mx-auto px-6 py-8">
         {/* Header */}
         <div className="text-center mb-12">
@@ -175,6 +187,6 @@ export default function InviteFriendsPage() {
           </Card>
         </div>
       </div>
-    </div>
+    </main>
   );
 }

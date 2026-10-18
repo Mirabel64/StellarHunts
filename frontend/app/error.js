@@ -19,7 +19,11 @@ export default function Error() {
   };
 
   return (
-    <main className="relative min-h-screen w-full overflow-hidden bg-gradient-to-br from-black via-purple-900 to-black">
+    <main
+      id="main-content"
+      tabIndex={-1}
+      className="relative min-h-screen w-full overflow-hidden bg-gradient-to-br from-black via-purple-900 to-black"
+    >
       {/* Animated background blur */}
       <AnimatedBlurBackground />
       {/* Content */}
@@ -54,7 +58,7 @@ export default function Error() {
               className="w-full sm:w-auto bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white font-bold py-4 px-8 rounded-lg transform transition-all hover:scale-105 shadow-lg hover:shadow-purple-500/50"
             >
               <Link href="/" className="flex items-center gap-2">
-                <Home size={20} />
+                <Home aria-hidden="true" size={20} />
                 Return Home
               </Link>
             </Button>
@@ -64,7 +68,7 @@ export default function Error() {
               className="w-full sm:w-auto border-white/20 text-white hover:bg-white/10 hover:text-white bg-transparent font-bold py-4 px-8 rounded-lg transform transition-all hover:scale-105"
             >
               <div className="flex items-center gap-2">
-                <RefreshCcw size={20} />
+                <RefreshCcw aria-hidden="true" size={20} />
                 Try Again
               </div>
             </Button>

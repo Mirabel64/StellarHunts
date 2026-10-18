@@ -1,91 +1,220 @@
 import {
-  Controller,
-  Post,
   Body,
+  Controller,
   Get,
-  Query,
   HttpCode,
   HttpStatus,
+  Post,
   UseGuards,
 } from '@nestjs/common';
 import {
-  ApiTags,
+  ApiBearerAuth,
   ApiOperation,
   ApiResponse,
+  ApiTags,
 } from '@nestjs/swagger';
-import { WalletService, WalletChallenge } from './wallet.service';
-import { Wallet } from './entities/wallet.entity';
+import { AuthService } from '../auth/services/auth.service';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import type { User } from '../auth/entities/user.entity';
 import { RateLimit } from '../rate-limiter/rate-limit.decorator';
 import { RateLimitGuard } from '../rate-limiter/rate-limit.guard';
+import {
+  WalletChallengeDto,
+  WalletChallengeResponseDto,
+} from './dto/wallet-challenge.dto';
+import {
+  LinkWalletDto,
+  VerifyWalletSignatureDto,
+  WalletSessionInfoDto,
+  WalletSessionResponseDto,
+} from './dto/verify-wallet-signature.dto';
+import { CurrentWalletSession } from './decorators/current-wallet-session.decorator';
+import { WalletSessionGuard } from './guards/wallet-session.guard';
+import {
+  WalletAuthService,
+  type WalletSessionContext,
+} from './wallet-auth.service';
+import { WalletService } from './wallet.service';
 
-@ApiTags('Wallet')
+@ApiTags('Wallet Authentication')
 @Controller('wallet')
 export class WalletController {
-  constructor(private readonly walletService: WalletService) {}
-
-  @Post('link')
-  @UseGuards(RateLimitGuard)
-  @RateLimit({ ttl: 900, limit: 10 })
-  @HttpCode(HttpStatus.CREATED)
-  @ApiOperation({ summary: 'Link or upsert a wallet address' })
-  async linkWallet(@Body() body: { address: string }): Promise<Wallet> {
-    return this.walletService.linkWallet(body.address);
-  }
+  constructor(
+    private readonly walletService: WalletService,
+    private readonly walletAuthService: WalletAuthService,
+    private readonly authService: AuthService,
+  ) {}
 
   @Post('challenge')
+  @UseGuards(RateLimitGuard)
+  @RateLimit({
+    ttl: 60,
+    limit: 20,
+    keyGenerator: (req) => req.body?.walletAddress,
+  })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Create a signable wallet challenge',
     description:
-      'Returns a message (bound to wallet/user/domain/expiry with a nonce) that the client must sign with its Stellar ed25519 key.',
+      'Issues a single-use, time-limited challenge bound to the wallet address and the configured domain. The wallet must sign the returned message bytes exactly.',
   })
-  @ApiResponse({ status: 200, description: 'Challenge created' })
-  async createChallenge(
-    @Body() body: WalletChallengeDto,
-  ): Promise<WalletChallenge> {
+  @ApiResponse({ status: 200, type: WalletChallengeResponseDto })
+  @ApiResponse({ status: 400, description: 'Invalid wallet address' })
+  @ApiResponse({ status: 429, description: 'Too many challenges requested' })
+  createChallenge(
+    @Body() dto: WalletChallengeDto,
+  ): Promise<WalletChallengeResponseDto> {
     return this.walletService.createChallenge(
-      body.walletAddress,
-      body.userId,
-      body.domain,
-      body.ttlSeconds,
+      dto.walletAddress,
+      dto.ttlSeconds,
     );
   }
 
-  @Post('verify-signature')
-  @UseGuards(RateLimitGuard)
-  // Keyed by wallet address too: limits signature brute-forcing on a
-  // specific address across IPs, while still throttling anonymous traffic
-  // by IP.
-  @RateLimit({
-    ttl: 60,
-    limit: 10,
-    keyGenerator: (req) => req.body?.address,
-  })
-  async verifySignature(
-    @Body() body: VerifyWalletSignatureDto,
-  ): Promise<{ valid: boolean; error?: string }> {
-    return this.walletService.verifySignature(
-      body.walletAddress,
-      body.signature,
-      body.message,
-    );
-  }
-
-  @Get('verify-signature')
+  @Post('verify')
   @UseGuards(RateLimitGuard)
   @RateLimit({
     ttl: 60,
     limit: 10,
-    keyGenerator: (req) => {
-      const address = req.query?.address;
-      return typeof address === 'string' ? address : undefined;
-    },
+    keyGenerator: (req) => req.body?.walletAddress,
   })
-  async verifySignatureGet(
-    @Query('address') address: string,
-    @Query('signature') signature: string,
-    @Query('message') message: string,
-  ): Promise<{ valid: boolean; error?: string }> {
-    return this.walletService.verifySignature(address, signature, message);
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Verify a wallet signature and start a session',
+    description:
+      'Verifies the ed25519 signature over the challenge message, consumes the nonce, and returns a session token. If the wallet is linked to an account, a standard account token pair is returned (`tokenType: Bearer`); otherwise a wallet-only session token is returned (`tokenType: WalletSession`).',
+  })
+  @ApiResponse({ status: 200, type: WalletSessionResponseDto })
+  @ApiResponse({
+    status: 401,
+    description: 'Unknown, expired, replayed or badly signed challenge',
+  })
+  @ApiResponse({ status: 429, description: 'Too many verification attempts' })
+  async verify(
+    @Body() dto: VerifyWalletSignatureDto,
+  ): Promise<WalletSessionResponseDto> {
+    await this.walletService.verifySignature(
+      dto.walletAddress,
+      dto.nonce,
+      dto.signature,
+    );
+
+    const user = await this.walletService.findUserByWallet(dto.walletAddress);
+    if (user) {
+      const accountSession = await this.authService.issueSessionForUser(user);
+      return {
+        linked: true,
+        walletAddress: dto.walletAddress,
+        ...accountSession,
+        user: accountSession.user,
+      };
+    }
+
+    const session = await this.walletService.issueWalletSession(
+      dto.walletAddress,
+    );
+
+    return {
+      linked: false,
+      walletAddress: dto.walletAddress,
+      accessToken: session.accessToken,
+      tokenType: 'WalletSession',
+      expiresIn: session.expiresIn,
+      user: null,
+    };
+  }
+
+  @Get('session')
+  @UseGuards(WalletSessionGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Inspect the current wallet session',
+    description:
+      'Returns the wallet address, expiry and linked account (if any) for the presented wallet session token.',
+  })
+  @ApiResponse({ status: 200, type: WalletSessionInfoDto })
+  @ApiResponse({ status: 401, description: 'Invalid or revoked session' })
+  async getSession(
+    @CurrentWalletSession() context: WalletSessionContext,
+  ): Promise<
+    WalletSessionInfoDto & {
+      linked: boolean;
+      user: { id: string; name: string; username: string } | null;
+    }
+  > {
+    const user = await this.walletService.findUserByWallet(
+      context.walletAddress,
+    );
+
+    return {
+      walletAddress: context.walletAddress,
+      userId: context.userId,
+      expiresAt: context.session.expiresAt,
+      createdAt: context.session.createdAt,
+      lastSeenAt: context.session.lastSeenAt,
+      linked: Boolean(user),
+      user: user
+        ? { id: user.id, name: user.name, username: user.username }
+        : null,
+    };
+  }
+
+  @Post('logout')
+  @UseGuards(WalletSessionGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Revoke the current wallet session' })
+  @ApiResponse({ status: 200, description: 'Session revoked' })
+  @ApiResponse({ status: 401, description: 'Invalid or revoked session' })
+  async logout(
+    @CurrentWalletSession() context: WalletSessionContext,
+  ): Promise<{ revoked: boolean }> {
+    await this.walletAuthService.revokeSession(context.session.id);
+    return { revoked: true };
+  }
+
+  @Post('link')
+  @UseGuards(JwtAuthGuard, RateLimitGuard)
+  @RateLimit({
+    ttl: 300,
+    limit: 5,
+    keyGenerator: (req) =>
+      (req.user as { id?: string } | undefined)?.id,
+  })
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Link a wallet to the signed-in account',
+    description:
+      'Requires a valid challenge signature for the wallet address, so an address can only be linked by someone who controls its key.',
+  })
+  @ApiResponse({ status: 200, description: 'Wallet linked to the account' })
+  @ApiResponse({ status: 401, description: 'Invalid or replayed signature' })
+  @ApiResponse({
+    status: 409,
+    description: 'Wallet already linked to another account',
+  })
+  async linkWallet(
+    @CurrentUser() user: User,
+    @Body() dto: LinkWalletDto,
+  ): Promise<{
+    id: string;
+    name: string;
+    username: string;
+    walletAddress: string;
+  }> {
+    const linked = await this.walletService.linkWalletToAccount(
+      user.id,
+      dto.walletAddress,
+      dto.nonce,
+      dto.signature,
+    );
+
+    return {
+      id: linked.id,
+      name: linked.name,
+      username: linked.username,
+      walletAddress: linked.walletAddress,
+    };
   }
 }

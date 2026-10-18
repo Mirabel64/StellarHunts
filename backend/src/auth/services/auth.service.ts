@@ -1,7 +1,6 @@
 import {
   Injectable,
   Logger,
-  ConflictException,
   UnauthorizedException,
   BadRequestException,
 } from '@nestjs/common';
@@ -17,6 +16,7 @@ import { LoginDto } from '../dto/login.dto';
 import { InjectRepository } from '@nestjs/typeorm';
 import { UserTokenHistoryService } from '../../user-token-history/services/user-token-history.service';
 import { TokenType } from '../../user-token-history/entities/token-history.entity';
+import { parseDurationToSeconds } from '../../common/utils/duration';
 
 const BREACHED_PASSWORDS = new Set([
   'password',
@@ -196,29 +196,7 @@ export class AuthService {
         throw new UnauthorizedException("Invalid email or password")
       }
 
-      // Update last login time
-      await this.userRepository.update(user.id, {
-        lastLoginAt: new Date(),
-      });
-
-      // Generate JWT token pair (access + refresh)
-      const tokens = await this.issueTokenPair(user);
-      const expiresIn = this.getTokenExpirationTime();
-      const refreshExpiresIn = this.getRefreshTokenExpirationTime();
-
-      return {
-        accessToken: tokens.accessToken,
-        refreshToken: tokens.refreshToken,
-        tokenType: 'Bearer',
-        expiresIn,
-        refreshExpiresIn,
-        user: {
-          id: user.id,
-          name: user.name,
-          email: user.email,
-          createdAt: user.createdAt,
-        },
-      };
+      return await this.issueSessionForUser(user);
     } catch (error) {
       if (error instanceof UnauthorizedException) {
         this.logAuthFailure('login', 'invalid_credentials', error, 'warn');
@@ -228,6 +206,34 @@ export class AuthService {
       this.logAuthFailure('login', 'unexpected', error);
       throw new BadRequestException("Login failed")
     }
+  }
+
+  /**
+   * Issues an account session for a user whose identity has already been
+   * proven — by password login, or by a verified wallet signature — and
+   * records the login time.
+   *
+   * Kept in one place so both login paths mint the same token pair, with the
+   * same claims, expiry and revocation tracking.
+   */
+  async issueSessionForUser(user: User): Promise<AuthResponseDto> {
+    await this.userRepository.update(user.id, { lastLoginAt: new Date() });
+
+    const tokens = await this.issueTokenPair(user);
+
+    return {
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+      tokenType: 'Bearer',
+      expiresIn: this.getTokenExpirationTime(),
+      refreshExpiresIn: this.getRefreshTokenExpirationTime(),
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        createdAt: user.createdAt,
+      },
+    };
   }
 
   async validateUser(payload: JwtPayload, rawToken?: string): Promise<User> {
@@ -423,26 +429,7 @@ export class AuthService {
   }
 
   private parseExpiresInSeconds(expiresIn: string | number): number {
-    // Convert time string to seconds
-    if (typeof expiresIn === 'number') {
-      return expiresIn;
-    }
-
-    const timeValue = Number.parseInt(expiresIn);
-    const timeUnit = expiresIn.slice(-1);
-
-    switch (timeUnit) {
-      case 's':
-        return timeValue;
-      case 'm':
-        return timeValue * 60;
-      case 'h':
-        return timeValue * 60 * 60;
-      case 'd':
-        return timeValue * 24 * 60 * 60;
-      default:
-        return 900; // 15 minutes default
-    }
+    return parseDurationToSeconds(expiresIn, 900); // 15 minutes default
   }
 
   private assertPasswordPolicy(

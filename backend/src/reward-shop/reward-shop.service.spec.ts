@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
 import { RewardShopService } from './reward-shop.service';
-import { economyConfig } from '../../config/economy.config';
+import { economyConfig } from '../../config/economy';
 
 describe('RewardShopService', () => {
   let service: RewardShopService;

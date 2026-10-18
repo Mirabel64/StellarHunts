@@ -5,7 +5,11 @@ import AnimatedBlurBackground from "@/components/AnimatedBlurBackground";
 
 const NotFound = () => {
   return (
-    <main className="relative min-h-screen w-full overflow-hidden bg-gradient-to-br from-black via-purple-900 to-black">
+    <main
+      id="main-content"
+      tabIndex={-1}
+      className="relative min-h-screen w-full overflow-hidden bg-gradient-to-br from-black via-purple-900 to-black"
+    >
       {/* Animated background blur */}
       <AnimatedBlurBackground />
       {/* Content */}
@@ -40,7 +44,7 @@ const NotFound = () => {
               className="w-full sm:w-auto bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white font-bold py-4 px-8 rounded-lg transform transition-all hover:scale-105 shadow-lg hover:shadow-purple-500/50"
             >
               <Link href="/" className="flex items-center gap-2">
-                <Home size={20} />
+                <Home aria-hidden="true" size={20} />
                 Return Home
               </Link>
             </Button>

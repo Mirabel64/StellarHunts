@@ -9,7 +9,7 @@ import {
 } from '@nestjs/websockets'
 import { Logger, UseGuards } from '@nestjs/common'
 import { Server, Socket } from 'socket.io'
-import type { InAppNotificationsService } from './in-app-notifications.service'
+import { InAppNotificationsService } from './in-app-notifications.service'
 import { CreateNotificationDto } from './dto/create-notification.dto'
 import { SystemNotificationDto } from './dto/system-notification.dto'
 import type { InAppNotification } from './entities/in-app-notification.entity'

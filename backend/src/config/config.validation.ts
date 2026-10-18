@@ -120,6 +120,14 @@ export const validationSchema = Joi.object({
   JWT_SECRET: Joi.string().required(),
   JWT_EXPIRES_IN: Joi.string().default('15m'),
   JWT_REFRESH_EXPIRES_IN: Joi.string().default('30d'),
+  // Wallet signature login (see wallet/wallet.service.ts). The domain is
+  // bound into every challenge so a signature collected on another site
+  // cannot be replayed here; the TTL is capped by the schema and again by
+  // the service. `WALLET_SESSION_EXPIRES_IN` accepts the same `15m`/`24h`
+  // format as the JWT lifetimes.
+  WALLET_AUTH_DOMAIN: Joi.string().trim().hostname().default('stellar-hunts.app'),
+  WALLET_CHALLENGE_TTL_SECONDS: Joi.number().integer().min(30).max(900).default(300),
+  WALLET_SESSION_EXPIRES_IN: Joi.string().default('24h'),
 
   // ── Database ─────────────────────────────────────────────────────────
   DATABASE_HOST: Joi.string().required(),
