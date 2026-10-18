@@ -15,6 +15,8 @@ import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { usePuzzleContract } from "@/hooks/usePuzzleContract";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
+import Confetti from "@/components/puzzles/Confetti";
+import ShareCompletion from "@/components/puzzles/ShareCompletion";
 import {
   getPuzzleAnswerOptions,
   getPuzzleAnswerType,
@@ -502,6 +504,14 @@ const PuzzleComponent = ({
         <div className="min-h-[4rem]">
           {feedback && (
             <FeedbackToast feedback={feedback} prefersReducedMotion={prefersReducedMotion} />
+          )}
+          {feedback?.correct && (
+            <>
+              <Confetti active={Boolean(feedback.correct)} />
+              <div className="mt-3">
+                <ShareCompletion puzzleTitle={puzzle.title} />
+              </div>
+            </>
           )}
           {contractError && !feedback && (
             <Alert
