@@ -15,6 +15,8 @@ export enum ActivityType {
   NFT_MINT = 'NFT_MINT', // User minted an NFT
 }
 
+
+
 // Maps this class to an "activity" table in the database
 @Entity()
 export class Activity {
