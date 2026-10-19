@@ -385,9 +385,22 @@ jobs:
           echo "::error::Backend did not become healthy and ready."
           exit 1
 
-      - name: Run e2e tests
+      # Integration suite (issue #756) runs with the rest of the e2e specs and
+      # emits an lcov + text coverage summary for src/. The suite discovers the
+      # route graph from the live application, so new endpoints are covered
+      # automatically, then exercises the core flows against seeded fixtures.
+      - name: Run e2e tests with coverage
         working-directory: backend
-        run: npm run test:e2e
+        run: npm run test:e2e:cov
+
+      - name: Upload backend e2e coverage
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: backend-e2e-coverage
+          path: backend/coverage-e2e
+          if-no-files-found: warn
+          retention-days: 7
 
   # The OpenAPI document (docs/openapi.json) and the API reference
   # (docs/api.md) are generated from the application, never edited by hand.

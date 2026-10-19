@@ -199,6 +199,25 @@ the e2e suite.
 | `npm run test:cov`   | `jest --coverage`          | Unit tests with coverage report.                     |
 | `npm run test:e2e`   | `jest --config ./test/jest-e2e.json` | Run the E2E test suite.                |
 
+### API integration suite
+
+`test/api-integration.e2e-spec.ts` (issue #756) is part of the e2e run. It
+boots the real `AppModule` against the test database and:
+
+1. **Discovers every mounted route** from the application's own Swagger
+document and calls each one, so a new endpoint is covered automatically and
+an unmounted route fails the suite.
+2. **Exercises the core flows against fixtures** — puzzle discovery, admin
+creation and publication, correct/incorrect submission grading, rewards and
+duplicate-claim prevention, content, and categories.
+
+Fixtures live in `test/fixtures/test-database.fixture.ts`. `resetDatabase()`
+truncates every entity table and `seedDatabase()` inserts deterministic admin,
+user, puzzle, reward, category, content, and progress records. The suite needs
+the same services as the rest of the e2e run (`DATABASE_*` with
+`DATABASE_SYNC=true`, plus Redis); CI provides them and uploads the coverage
+report as the `backend-e2e-coverage` artifact.
+
 ### Run Modes
 
 The backend exposes three runtime modes so you can pick the right
@@ -273,8 +292,11 @@ npm run test:watch
 # With coverage
 npm run test:cov
 
-# E2E tests
+# E2E tests (includes the API integration suite)
 npm run test:e2e
+
+# E2E tests + coverage report (coverage-e2e/lcov.info)
+npm run test:e2e:cov
 ```
 
 ## Code Quality
