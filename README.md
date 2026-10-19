@@ -84,7 +84,12 @@ npm run lint                 # lint backend and frontend
 npm run test                 # backend, frontend, and contract tests
 npm run build                # production builds for backend and frontend
 npm run test:backend:e2e     # backend end-to-end tests
+npm run --workspace backend db:migrate  # apply database migrations
+npm run --workspace backend db:seed     # insert the core demo dataset
 ```
+
+Database schema, migration, and seed conventions are documented in
+[docs/database-schema.md](docs/database-schema.md).
 
 ## Contributing and license
 

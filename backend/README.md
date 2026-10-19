@@ -198,6 +198,29 @@ the e2e suite.
 | `npm run test:watch` | `jest --watch`             | Re-run unit tests on file change.                    |
 | `npm run test:cov`   | `jest --coverage`          | Unit tests with coverage report.                     |
 | `npm run test:e2e`   | `jest --config ./test/jest-e2e.json` | Run the E2E test suite.                |
+| `npm run db:migrate` | `typeorm-ts-node-commonjs migration:run -d src/database/data-source.ts` | Apply pending schema migrations. |
+| `npm run db:migrations` | `typeorm-ts-node-commonjs migration:show -d src/database/data-source.ts` | List applied and pending migrations. |
+| `npm run db:migrate:revert` | `typeorm-ts-node-commonjs migration:revert -d src/database/data-source.ts` | Roll back the latest migration. |
+| `npm run db:seed`    | `ts-node -r tsconfig-paths/register scripts/seed.ts` | Insert the idempotent core demo dataset. |
+| `npm run db:setup`   | `npm run db:migrate && npm run db:seed` | Migrate and seed in one step. |
+
+### Schema migrations and seed data
+
+The core schema (users, puzzles, puzzle completions, rewards, and reward
+claims) is defined by the versioned baseline migration in
+`src/database/migrations/`. Run migrations against a real database before
+starting the API when `DATABASE_SYNC=false`:
+
+```bash
+cd backend
+npm run db:migrate
+npm run db:seed
+```
+
+The seed refuses to run when `NODE_ENV=production` unless
+`SEED_ALLOW_PRODUCTION=true` is set, and it never truncates existing data.
+See [`docs/database-schema.md`](../docs/database-schema.md) for the ER
+diagram, table constraints, and the migration authoring checklist.
 
 ### Run Modes
 
