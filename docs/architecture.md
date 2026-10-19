@@ -154,7 +154,9 @@ The table below lists modules that are **actually registered** in `app.module.ts
 - `UserInventoryModule` — NFT and badge ownership tracking
 
 **Puzzle & Content**
-- `PuzzleModule` — Core puzzle CRUD and game logic
+- `PuzzleModule` — Core puzzle CRUD and game logic. See the
+  [puzzle author guide](puzzle-author-guide.md) for the authoring,
+  validation, and publishing workflow.
 - `PuzzleSubmissionModule` — Answer submission handling
 - `PuzzleDependencyModule` — Prerequisite puzzle management
 - `PuzzleTranslationModule` — Multi-language support

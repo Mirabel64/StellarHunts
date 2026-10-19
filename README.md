@@ -75,7 +75,7 @@ Contract test and deployment details are in [`onchain/`](onchain/).
 | `onchain/contracts/stellar_hunts/` | Puzzle, progression, and game state contract |
 | `onchain/contracts/stellar_hunts_nft/` | Level badge NFT contract |
 | `onchain/contracts/stellar_hunts_types/` | Shared Soroban types |
-| `docs/` | Project documentation |
+| `docs/` | Project documentation, including the [puzzle author guide](docs/puzzle-author-guide.md) |
 
 ## Useful commands
 
