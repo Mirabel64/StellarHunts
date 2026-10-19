@@ -1,0 +1,79 @@
+# =============================================================================
+# Dockerfile.frontend — Next.js Application (multi-stage)
+# =============================================================================
+#
+# Stages:
+#   deps      — install all dependencies
+#   build     — next build → .next/standalone
+#   runner    — minimal production image using Next.js standalone output
+#
+# Build context: repository root (so `COPY` paths are relative to the root)
+# Usage (from repo root):
+#   docker build -f Dockerfile.frontend -t stellarhunts-frontend .
+#
+# Next.js standalone output must be enabled in next.config.mjs:
+#   output: 'standalone'
+#
+# =============================================================================
+
+# ── Stage 1: install dependencies ────────────────────────────────────────────
+FROM node:18-alpine AS deps
+
+RUN apk add --no-cache libc6-compat
+
+WORKDIR /app
+
+# Copy package manifests first for layer caching.
+COPY frontend/package.json frontend/package-lock.json ./
+
+RUN npm ci --prefer-offline
+
+# ── Stage 2: build ───────────────────────────────────────────────────────────
+FROM node:18-alpine AS build
+
+WORKDIR /app
+
+COPY --from=deps /app/node_modules ./node_modules
+
+# Copy full frontend source.
+COPY frontend/ .
+
+# NEXT_PUBLIC_* env vars are baked in at build time; provide defaults or
+# override via --build-arg for CI/CD.
+ARG NEXT_PUBLIC_API_URL=http://backend:3001
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+
+# Build the Next.js application.
+# The `standalone` output mode (set in next.config.mjs) produces a
+# self-contained server bundle in .next/standalone.
+RUN npm run build
+
+# ── Stage 3: production runner ───────────────────────────────────────────────
+FROM node:18-alpine AS runner
+
+# Security: run as a non-root user.
+RUN addgroup --system --gid 1001 nodejs \
+  && adduser  --system --uid 1001 nextjs
+
+WORKDIR /app
+
+ENV NODE_ENV=production
+ENV PORT=3000
+ENV HOSTNAME=0.0.0.0
+
+# Copy the standalone bundle produced by `next build`.
+COPY --from=build --chown=nextjs:nodejs /app/.next/standalone ./
+# Copy static assets and public folder (not included in standalone).
+COPY --from=build --chown=nextjs:nodejs /app/.next/static    ./.next/static
+COPY --from=build --chown=nextjs:nodejs /app/public          ./public
+
+USER nextjs
+
+EXPOSE 3000
+
+# Health check: poll the Next.js health route or root path.
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+  CMD wget -qO- http://localhost:3000/ || exit 1
+
+# The standalone output exposes a `server.js` entry point.
+CMD ["node", "server.js"]
