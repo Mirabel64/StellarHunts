@@ -1,7 +1,7 @@
 # ADR-0003: NestJS Modular Monolith Over Microservices
 
-**Date:** 2025-07-24  
-**Status:** Accepted  
+**Date:** 2025-07-24
+**Status:** Accepted
 **Deciders:** StellarHunts backend team
 
 ---

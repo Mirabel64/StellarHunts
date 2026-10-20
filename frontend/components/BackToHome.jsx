@@ -7,7 +7,7 @@ const BackToHome = () => {
         <House size={14} />
         <span>Back to Home</span>
 
-      
+
     </Link>
   )
 }

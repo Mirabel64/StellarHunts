@@ -292,4 +292,4 @@ describe('PuzzleCategoryController (e2e)', () => {
         });
     });
   });
-}); 
+});

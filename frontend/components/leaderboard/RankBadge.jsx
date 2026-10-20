@@ -31,10 +31,10 @@ const RankBadge = ({ rank }) => {
           };
       }
     };
-  
+
     const style = getBadgeStyle(rank);
     const Icon = style.icon;
-  
+
     return (
       <div
         className={`${style.size} rounded-full ${style.class} flex items-center justify-center`}

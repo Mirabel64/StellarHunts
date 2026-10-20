@@ -59,4 +59,4 @@ const ReferralStats = ({ stats }) => {
   );
 };
 
-export default ReferralStats; 
+export default ReferralStats;
