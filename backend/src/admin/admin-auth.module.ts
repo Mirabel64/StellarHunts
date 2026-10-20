@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { JwtModule } from '@nestjs/jwt';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { Admin } from './admin.entity';
 import { AdminService } from './admin.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
@@ -21,9 +22,13 @@ import { RolesGuard } from './guards/roles.guard';
 @Module({
   imports: [
     TypeOrmModule.forFeature([Admin]),
-    JwtModule.register({
-      secret: process.env.JWT_SECRET || 'supersecret',
-      signOptions: { expiresIn: '1d' },
+    JwtModule.registerAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (configService: ConfigService) => ({
+        secret: configService.getOrThrow<string>('JWT_SECRET'),
+        signOptions: { expiresIn: '1d' },
+      }),
     }),
   ],
   providers: [AdminService, JwtStrategy, JwtAuthGuard, RolesGuard],
