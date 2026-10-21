@@ -4,7 +4,7 @@ Thank you for your interest in contributing to StellarHunts. This document outli
 
 ## Code of Conduct
 
-By participating in this project, you agree to maintain a respectful and inclusive environment. Harassment, discriminatory language, and personal attacks are not tolerated.
+By participating in this project, you agree to follow the [Code of Conduct](CODE_OF_CONDUCT.md). Harassment, discriminatory language, and personal attacks are not tolerated.
 
 ## Getting Started
 
@@ -369,3 +369,44 @@ For contributions to the `onchain/` directory:
 ## Questions?
 
 If you have questions about the contribution process, open a discussion or issue in the repository. For urgent matters, contact the development team directly.
+
+## Contribution Workflow
+
+1. Pick or open an issue and comment that you are working on it.
+2. Fork the repository and create a branch from `main`.
+3. Make focused changes, with tests, and keep the PR to one concern.
+4. Run the checks for the workspaces you touched (see below).
+5. Open a pull request using the [PR template](.github/PULL_REQUEST_TEMPLATE.md) and link the issue with `Closes #<number>`.
+
+### Branch naming
+
+`<type>/<issue-number>-<short-description>`, for example `feat/743-unlock-notifications` or `fix/791-typeorm-entities`.
+
+Types: `feat`, `fix`, `docs`, `test`, `chore`, `refactor`, `ci`.
+
+### Commit conventions
+
+[Conventional Commits](https://www.conventionalcommits.org/): `<type>(<scope>): <summary>`, imperative mood, no trailing period, summary under 72 characters.
+
+```
+feat(achievements): notify players when an achievement unlocks
+fix(puzzle): reject empty answers
+```
+
+## Code Style
+
+Style is enforced by tooling, not review comments. Run the linters before pushing:
+
+| Area | Tooling | Command |
+|------|---------|---------|
+| Backend (TypeScript) | ESLint (`backend/.eslintrc.js`) + Prettier (`backend/.prettierrc`: single quotes, trailing commas) | `cd backend && npm run lint` |
+| Frontend (Next.js) | ESLint (`frontend/.eslintrc.json`) | `cd frontend && npm run lint` |
+| Contracts (Rust) | `rustfmt` | `cd onchain && cargo fmt --all` |
+
+General rules:
+
+- Editor defaults live in `.editorconfig` (UTF-8, LF, 2-space indent for TS/JS/YAML, 4 for Rust).
+- Prefer small, named functions over long handlers; keep controllers thin and put logic in services.
+- Validate every external input with DTOs (`class-validator`); never trust client-supplied answers or scores.
+- No secrets in code or commits; use `.env` files (see `.env.example`) and the secret scanning in CI.
+- Every behaviour change needs a test; contracts must keep coverage above the CI threshold.
