@@ -128,6 +128,25 @@ pub enum DataKey {
     PlayerLevelProgressV2(Address, Levels),
     SchemaVersion,
     Paused,
+    /// Whether `Address` currently holds `Role`. Present and set to `true`
+    /// only while the role is granted; revoked roles are removed.
+    Role(Address, Role),
+}
+
+// ---------------------------------------------------------------------
+// Role-based access control (issue #676)
+//
+// Roles layer on top of the single `Admin` address: the admin implicitly
+// holds every role. `Minter` may mint level badges and `Upgrader` may run
+// schema upgrades, so those privileged entrypoints can be delegated
+// without transferring full admin control.
+// ---------------------------------------------------------------------
+
+#[contracttype]
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Role {
+    Minter,
+    Upgrader,
 }
 
 // ---------------------------------------------------------------------
@@ -346,6 +365,51 @@ impl StellarHunts {
             (Symbol::new(&env, "admin_transfer_accepted"),),
             (previous_admin, pending_admin),
         );
+    }
+
+    // -----------------------------------------------------------------
+    // Role management (issue #676)
+    // -----------------------------------------------------------------
+
+    /// Grants `role` to `account`. Only the current admin may call this.
+    /// Granting an already-held role is a no-op re-grant but still emits
+    /// an event so off-chain indexers observe the intent.
+    pub fn grant_role(env: Env, account: Address, role: Role) {
+        require_admin(&env);
+        env.storage()
+            .persistent()
+            .set(&DataKey::Role(account.clone(), role), &true);
+        env.events()
+            .publish((Symbol::new(&env, "role_granted"),), (account, role));
+    }
+
+    /// Revokes `role` from `account`. Only the current admin may call this.
+    /// Revoking a role that is not held simply leaves it absent and emits
+    /// an event.
+    pub fn revoke_role(env: Env, account: Address, role: Role) {
+        require_admin(&env);
+        env.storage()
+            .persistent()
+            .remove(&DataKey::Role(account.clone(), role));
+        env.events()
+            .publish((Symbol::new(&env, "role_revoked"),), (account, role));
+    }
+
+    /// Returns whether `account` holds `role`. The admin implicitly holds
+    /// every role.
+    pub fn has_role(env: Env, account: Address, role: Role) -> bool {
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .unwrap_or_else(|| panic_with_error!(&env, Error::NotInitialized));
+        if account == admin {
+            return true;
+        }
+        env.storage()
+            .persistent()
+            .get(&DataKey::Role(account, role))
+            .unwrap_or(false)
     }
 
     // -----------------------------------------------------------------
@@ -936,11 +1000,15 @@ impl StellarHunts {
     pub fn pause(env: Env) {
         require_admin(&env);
         env.storage().instance().set(&DataKey::Paused, &true);
+        env.events()
+            .publish((Symbol::new(&env, "paused"),), ());
     }
 
     pub fn unpause(env: Env) {
         require_admin(&env);
         env.storage().instance().set(&DataKey::Paused, &false);
+        env.events()
+            .publish((Symbol::new(&env, "unpaused"),), ());
     }
 
     pub fn is_paused(env: Env) -> bool {

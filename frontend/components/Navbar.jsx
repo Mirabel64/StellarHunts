@@ -3,6 +3,7 @@ import React, { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Menu, X, Gamepad, Trophy, Book, User, Users } from "lucide-react";
+import ThemeToggle from "@/components/ThemeToggle";
 
 const NAV_LINKS = [
   { href: "/game", label: "Play Now", icon: Gamepad },
