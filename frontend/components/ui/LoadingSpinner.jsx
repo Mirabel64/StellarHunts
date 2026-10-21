@@ -26,4 +26,4 @@ const LoadingSpinner = ({ className, size = "md" }) => {
   );
 };
 
-export default LoadingSpinner; 
+export default LoadingSpinner;

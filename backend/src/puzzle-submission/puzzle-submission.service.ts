@@ -1,12 +1,21 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  HttpException,
+  HttpStatus,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { PuzzleSubmission } from './puzzle-submission.entity';
 import { Puzzle } from '../puzzle/puzzle.entity';
 import { isUniqueViolation } from '../common/security/unique-violation';
+import { PuzzleRateLimitGuard } from '../common/guards/puzzle-rate-limit.guard';
 
 @Injectable()
 export class PuzzleSubmissionService {
+  // Shared across requests: attempts per hour with exponential backoff (#725).
+  private readonly attemptLimiter = new PuzzleRateLimitGuard();
+
   constructor(
     @InjectRepository(PuzzleSubmission)
     private readonly submissionRepo: Repository<PuzzleSubmission>,
@@ -19,6 +28,19 @@ export class PuzzleSubmissionService {
     puzzleId: string,
     answer: string,
   ) {
+    const decision = this.attemptLimiter.checkAttempt(playerId, puzzleId);
+    if (!decision.allowed) {
+      const seconds = Math.ceil(decision.retryAfterMs / 1000);
+      throw new HttpException(
+        {
+          statusCode: HttpStatus.TOO_MANY_REQUESTS,
+          message: `Too many attempts. Try again in ${seconds} seconds.`,
+          retryAfterSeconds: seconds,
+        },
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+
     // The correct answer must come from the server-side puzzle record — it is
     // never accepted from the client, otherwise a caller could grade their own
     // answer (issue #364 — unauthorized score mutations).

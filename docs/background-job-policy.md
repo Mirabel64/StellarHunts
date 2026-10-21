@@ -15,7 +15,7 @@ does not exist, or if a control value drifts from the constant in the code.
 
 ## Overlap protection and multiple replicas
 
-Only 2 of the 12 scheduled jobs carry an in-process execution guard, and that
+Only 2 of the 13 scheduled jobs carry an in-process execution guard, and that
 guard is a plain field on a singleton service.
 
 **A process-local guard does not protect against multiple replicas.** Each
@@ -25,7 +25,7 @@ process*. While two replicas are serving traffic, both will execute every
 unprotected job on every tick, and the two runs can interleave freely. Overlap
 protection for a multi-replica deployment requires a distributed lock — a Redis
 lock, a PostgreSQL advisory lock, or a unique constraint that the job's writes
-depend on — and no such lock exists today for the 9 jobs that are neither
+depend on — and no such lock exists today for the 10 jobs that are neither
 process-guarded nor database-locked.
 
 Changing a guard from a process-local field to a distributed lock is listed under
@@ -33,24 +33,25 @@ Changing a guard from a process-local field to a distributed lock is listed unde
 
 ## Scheduled job inventory
 
-All 12 `@Cron` jobs in `backend/src` are listed. "Overlap protection" records
+All 13 `@Cron` jobs in `backend/src` are listed. "Overlap protection" records
 what actually prevents two concurrent runs; "Errors contained" records whether
 the job catches its own failures.
 
 | Job | Source | Schedule | Overlap protection | Errors contained |
 | --- | --- | --- | --- | --- |
 | `refreshLeaderboard` | `backend/src/analytic/analytic-rollup.service.ts:32` | every minute | process-local guard | yes |
-| `scheduledRetentionCleanup` | `backend/src/analytic/analytic.service.ts:364` | daily at midnight | database row lock (`FOR UPDATE SKIP LOCKED`) | no |
+| `scheduledRetentionCleanup` | `backend/src/analytic/analytic.service.ts:339` | daily at midnight | database row lock (`FOR UPDATE SKIP LOCKED`) | no |
 | `scheduledRetentionCleanup` | `backend/src/audit-log/audit-log.service.ts:183` | daily at midnight | none | no |
 | `rotateDailyChallenges` | `backend/src/game-mechanic/services/rotation.service.ts:12` | daily at midnight | none | yes |
 | `rotateWeeklyChallenges` | `backend/src/game-mechanic/services/rotation.service.ts:57` | weekly | none | yes |
-| `checkScheduledMaintenance` | `backend/src/maintenance-mode/maintenance-mode.service.ts:193` | every minute | none | yes |
+| `checkScheduledMaintenance` | `backend/src/maintenance-mode/maintenance-mode.service.ts:192` | every minute | none | yes |
 | `processMatchmaking` | `backend/src/multiplayer-queue/multiplayer-queue.service.ts:238` | every 10 seconds | none | no |
 | `cleanupOldEntries` | `backend/src/multiplayer-queue/multiplayer-queue.service.ts:490` | daily at midnight | none | no |
 | `processOutbox` | `backend/src/outbox/outbox.service.ts:151` | every 10 seconds | process-local guard | yes |
 | `scheduledRetentionCleanup` | `backend/src/puzzle-access-log/puzzle-access-log.service.ts:115` | daily at midnight | none | no |
 | `cleanupExpiredSessions` | `backend/src/session/session.service.ts:44` | hourly | none | no |
 | `scheduledRetentionCleanup` | `backend/src/user-activity-log/user-activity-log.service.ts:95` | daily at midnight | none | no |
+| `pruneExpiredChallenges` | `backend/src/wallet/wallet.service.ts:240` | daily at 3am | none | yes |
 
 Notes on the inventory:
 
@@ -67,6 +68,9 @@ Notes on the inventory:
   `processOutbox` additionally claims each event before handling it, which
   keeps a *single event* from being handled twice even when several replicas
   drain the same queue. See *Outbox claims an event before handling it*.
+- `pruneExpiredChallenges` deletes only challenges that expired more than a day
+  ago, so a tick that overlaps another replica's tick removes the same rows
+  twice without any effect beyond a wasted statement.
 - 7 jobs do not catch their own failures. A failing tick in those jobs emits no
   log line from the job itself and is not retried by the job.
 
@@ -109,7 +113,7 @@ unnoticed in prose.
 | Outbox handler registration point | `registerHandler` | `backend/src/outbox/outbox.service.ts:28` |
 | Outbox branch for an unregistered event type | `if (!handler)` | `backend/src/outbox/outbox.service.ts:168` |
 | Rollup overlap guard check | `if (this.running)` | `backend/src/analytic/analytic-rollup.service.ts:45` |
-| Analytics retention row lock | `FOR UPDATE SKIP LOCKED` | `backend/src/analytic/analytic.service.ts:340` |
+| Analytics retention row lock | `FOR UPDATE SKIP LOCKED` | `backend/src/analytic/analytic.service.ts:315` |
 | Claim attempt loop bound | `attempt <= this.maxRetries` | `backend/src/nft-claim/nft-claim.service.ts:31` |
 | Claim backoff formula | `2 ** (attempt - 1)` | `backend/src/nft-claim/nft-claim.service.ts:70` |
 | Claim rethrows client errors without retrying | `if (error instanceof BadRequestException) throw error` | `backend/src/nft-claim/nft-claim.service.ts:64` |
@@ -136,7 +140,7 @@ Not yet implemented:
 
 - A single shared retry helper. The claim path, the rollup, and the outbox each
   implement their own loop and their own delay formula, so the three can drift.
-- Retrying the 10 scheduled jobs that have no retry at all. Today a failed
+- Retrying the 11 scheduled jobs that have no retry at all. Today a failed
   retention cleanup or matchmaking tick waits for the next scheduled run, with no
   backoff and no attempt counter.
 - Any alerting when an outbox event reaches `DEAD_LETTER`. The transition is
@@ -217,7 +221,7 @@ Not yet implemented:
 - Emitting a "job skipped because a run is still active" signal for the
   unprotected jobs. Today a second overlapping run is invisible: it simply
   proceeds.
-- An attempt counter or last-error record for the 9 unprotected jobs, so repeated
+- An attempt counter or last-error record for the 10 unprotected jobs, so repeated
   failures cannot be distinguished from a job that has been failing silently for
   a week.
 
@@ -227,7 +231,7 @@ Consolidated list of the gaps above. Each is a requirement this document makes
 explicit because the current code does not satisfy it.
 
 1. Replace the 2 process-local overlap guards with distributed locks, and give
-   the remaining 9 unprotected jobs some form of protection, before the backend
+   the remaining 10 unprotected jobs some form of protection, before the backend
    is run with more than one replica.
 2. Add the missing row lock to the 3 log-retention jobs so they match the
    analytics retention job.

@@ -1,7 +1,7 @@
 # ADR-0002: Use Zustand as the Primary State Manager Alongside Redux Toolkit
 
-**Date:** 2025-07-24  
-**Status:** Accepted  
+**Date:** 2025-07-24
+**Status:** Accepted
 **Deciders:** StellarHunts frontend team
 
 ---

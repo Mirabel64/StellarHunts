@@ -55,7 +55,7 @@ const LeaderboardSection = () => {
       streak: 5,
     },
   ];
-  
+
   const rankings = [
     {
       position: "1st Place",

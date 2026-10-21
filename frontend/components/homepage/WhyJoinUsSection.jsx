@@ -69,7 +69,7 @@ const WhyJoinSection = () => {
               transform: translateY(0);
             }
           }
-          
+
           @keyframes float {
             0%, 100% {
               transform: translateY(0);

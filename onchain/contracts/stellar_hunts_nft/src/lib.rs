@@ -36,12 +36,23 @@ pub enum NftDataKey {
     /// (a deployment that predates versioning) — see
     /// `onchain/docs/storage-versioning.md` and issue #453.
     SchemaVersion,
+    PuzzleReward(Address, u64),
+    PuzzleMetadata(Address, u64),
 }
 
 #[contracttype]
 #[derive(Clone, Debug)]
 pub struct BadgeData {
     pub minted_at: u64,
+    pub minter: Address,
+}
+
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct PuzzleRewardMetadata {
+    pub puzzle_name: String,
+    pub difficulty: String,
+    pub completion_timestamp: u64,
     pub minter: Address,
 }
 
@@ -60,6 +71,7 @@ pub enum Error {
     MetadataTooLarge = 5,
     NotInitialized = 6,
     ContractPaused = 7,
+    DuplicateCompletion = 8,
 }
 
 const MAX_BASE_URI_LEN: usize = 200;
@@ -195,12 +207,20 @@ impl StellarHuntsNft {
         let admin: Address = env.storage().instance().get(&NftDataKey::Admin).unwrap();
         admin.require_auth();
         env.storage().instance().set(&NftDataKey::Paused, &true);
+        env.events().publish(
+            (Symbol::new(&env, "nft_contract_paused"),),
+            (admin,),
+        );
     }
 
     pub fn unpause(env: Env) {
         let admin: Address = env.storage().instance().get(&NftDataKey::Admin).unwrap();
         admin.require_auth();
         env.storage().instance().set(&NftDataKey::Paused, &false);
+        env.events().publish(
+            (Symbol::new(&env, "nft_contract_unpaused"),),
+            (admin,),
+        );
     }
 
     pub fn is_paused(env: Env) -> bool {
@@ -267,6 +287,71 @@ impl StellarHuntsNft {
         env.storage().persistent().get(&key)
     }
 
+    /// Mint a reward NFT when a puzzle is solved (issue #671).
+    ///
+    /// Only an authorized minter (the game/hunter contract) may call this,
+    /// enforced by `minter.require_auth()` and `has_minter_role(minter)`.
+    /// Records puzzle metadata (name, difficulty, timestamp, minter).
+    /// Rejects duplicate completions with `Error::DuplicateCompletion`.
+    pub fn mint_puzzle_reward_nft(
+        env: Env,
+        minter: Address,
+        recipient: Address,
+        puzzle_id: u64,
+        puzzle_name: String,
+        difficulty: String,
+    ) {
+        minter.require_auth();
+        if env
+            .storage()
+            .instance()
+            .get(&NftDataKey::Paused)
+            .unwrap_or(false)
+        {
+            panic_with_error!(&env, Error::ContractPaused);
+        }
+
+        if !Self::has_minter_role(env.clone(), minter.clone()) {
+            panic_with_error!(&env, Error::NotAuthorized);
+        }
+
+        let reward_key = NftDataKey::PuzzleReward(recipient.clone(), puzzle_id);
+        if env.storage().persistent().has(&reward_key) {
+            panic_with_error!(&env, Error::DuplicateCompletion);
+        }
+        env.storage().persistent().set(&reward_key, &true);
+
+        let metadata = PuzzleRewardMetadata {
+            puzzle_name: puzzle_name.clone(),
+            difficulty: difficulty.clone(),
+            completion_timestamp: env.ledger().timestamp(),
+            minter: minter.clone(),
+        };
+        let meta_key = NftDataKey::PuzzleMetadata(recipient.clone(), puzzle_id);
+        env.storage().persistent().set(&meta_key, &metadata);
+
+        env.events().publish(
+            (Symbol::new(&env, "puzzle_reward_minted"),),
+            (recipient, puzzle_id, puzzle_name, difficulty),
+        );
+    }
+
+    pub fn has_puzzle_reward(env: Env, recipient: Address, puzzle_id: u64) -> bool {
+        env.storage()
+            .persistent()
+            .has(&NftDataKey::PuzzleReward(recipient, puzzle_id))
+    }
+
+    pub fn get_puzzle_metadata(
+        env: Env,
+        recipient: Address,
+        puzzle_id: u64,
+    ) -> Option<PuzzleRewardMetadata> {
+        env.storage()
+            .persistent()
+            .get(&NftDataKey::PuzzleMetadata(recipient, puzzle_id))
+    }
+
     // -----------------------------------------------------------------
     // Access control — owner / minter management
     // -----------------------------------------------------------------
@@ -281,7 +366,11 @@ impl StellarHuntsNft {
 
         env.storage()
             .instance()
-            .set(&NftDataKey::Minters(account), &true);
+            .set(&NftDataKey::Minters(account.clone()), &true);
+        env.events().publish(
+            (Symbol::new(&env, "minter_role_granted"),),
+            (account,),
+        );
     }
 
     pub fn revoke_minter_role(env: Env, account: Address) {
@@ -294,7 +383,11 @@ impl StellarHuntsNft {
 
         env.storage()
             .instance()
-            .remove(&NftDataKey::Minters(account));
+            .remove(&NftDataKey::Minters(account.clone()));
+        env.events().publish(
+            (Symbol::new(&env, "minter_role_revoked"),),
+            (account,),
+        );
     }
 
     pub fn has_minter_role(env: Env, account: Address) -> bool {

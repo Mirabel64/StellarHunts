@@ -195,6 +195,15 @@ describe('WalletService', () => {
       ).rejects.toThrow('already used');
     });
 
+    it('rejects a challenge bound to a different domain', async () => {
+      const { created, stored } = await createStoredChallenge();
+      stored.domain = 'evil.example.com';
+
+      await expect(
+        service.verifySignature(WALLET, created.nonce, sign(created.message)),
+      ).rejects.toThrow('unexpected domain');
+    });
+
     it('rejects a signature made by a different key', async () => {
       const { created } = await createStoredChallenge();
       const other = createKeypair();

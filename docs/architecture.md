@@ -154,7 +154,9 @@ The table below lists modules that are **actually registered** in `app.module.ts
 - `UserInventoryModule` — NFT and badge ownership tracking
 
 **Puzzle & Content**
-- `PuzzleModule` — Core puzzle CRUD and game logic
+- `PuzzleModule` — Core puzzle CRUD and game logic. See the
+  [puzzle author guide](puzzle-author-guide.md) for the authoring,
+  validation, and publishing workflow.
 - `PuzzleSubmissionModule` — Answer submission handling
 - `PuzzleDependencyModule` — Prerequisite puzzle management
 - `PuzzleTranslationModule` — Multi-language support
@@ -199,6 +201,10 @@ The following directories exist and may be under active development:
 Primary database: **PostgreSQL** managed through TypeORM with code-first entity definitions.
 
 Key entities: `User`, `Puzzle`, `Category`, `Reward`, `RewardClaim`, `TimeTrial`, `Progress`.
+
+Schema changes are versioned through TypeORM migrations; see
+[Database schema and migrations](database-schema.md) for the core ER
+diagram, migration commands, and the idempotent seed dataset.
 
 Configuration via environment variables:
 

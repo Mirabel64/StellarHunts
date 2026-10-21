@@ -14,6 +14,7 @@ import { signTransaction } from "@stellar/freighter-api";
 import {
   useWalletConnection,
 } from "./useWalletConnection";
+import { classifyWalletError } from "@/lib/wallet-errors";
 
 /**
  * Default RPC endpoint for the Stellar Soroban testnet.
@@ -39,6 +40,24 @@ const POLL_INTERVAL = 1000;
  * Max number of polling attempts before giving up.
  */
 const MAX_POLL_ATTEMPTS = 30;
+
+/**
+ * Computes a SHA-256 hash of a solution string consistently (issue #683).
+ * Returns a 32-byte Uint8Array.
+ *
+ * @param {string} solution
+ * @returns {Promise<Uint8Array>}
+ */
+export async function computeSolutionHash(solution) {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(solution);
+  if (typeof crypto !== "undefined" && crypto.subtle) {
+    const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+    return new Uint8Array(hashBuffer);
+  }
+  const { createHash } = await import("crypto");
+  return new Uint8Array(createHash("sha256").update(solution).digest());
+}
 
 /**
  * Converts a plain string into a Soroban Bytes ScVal (UTF-8 encoded).
@@ -259,9 +278,10 @@ export function usePuzzleContract(opts = {}) {
 
   /**
    * Submit an answer for a puzzle.
+   * Computes solution hash consistently before sending (issue #683).
    *
    * @param {number} questionId  – The on-chain question_id (u64)
-   * @param {string} answer      – The plain-text answer
+   * @param {string} answer      – The plain-text answer (computed into hash consistently)
    * @returns {{ correct: boolean, message: string }}
    */
   const submitAnswer = useCallback(
@@ -271,12 +291,15 @@ export function usePuzzleContract(opts = {}) {
       setFeedback(null);
 
       try {
+        // Compute SHA-256 hash of the answer consistently on the frontend (issue #683)
+        const hashBytes = await computeSolutionHash(answer);
+
         // Build ScVal arguments for the contract's submit_answer fn:
         //   submit_answer(env, caller: Address, question_id: u64, answer: Bytes) -> bool
         const args = [
           Address.fromString(walletAddress || (await ensureWallet())).toScVal(),
           nativeToScVal(BigInt(questionId), { type: "u64" }),
-          stringToBytesScVal(answer),
+          xdr.ScVal.scvBytes(hashBytes),
         ];
 
         const result = await invokeContract("submit_answer", args);
@@ -289,6 +312,55 @@ export function usePuzzleContract(opts = {}) {
           message: isCorrect
             ? "🎉 Correct! Well done!"
             : "❌ Incorrect answer. Try again!",
+        };
+        setFeedback(fb);
+        return { ...fb, submitted: true };
+      } catch (err) {
+        // A rejected signature or an unreachable RPC is not a wrong answer.
+        // Surface it through `error` (and the alert in PuzzleComponent) so
+        // the UI does not render an "Incorrect" toast for it.
+        const message = classifyWalletError(err, "Transaction failed");
+        setError(message);
+        setFeedback(null);
+        return { correct: false, message, submitted: false, error: true };
+      } finally {
+        setSubmitting(false);
+      }
+    },
+    [invokeContract, walletAddress, ensureWallet]
+  );
+
+  /**
+   * Complete a puzzle on-chain with solution hash verification (issue #670, #683).
+   *
+   * @param {number} puzzleId  – The on-chain puzzle_id (u64)
+   * @param {string} solution  – The plain-text solution (hashed before submission)
+   * @returns {{ correct: boolean, message: string }}
+   */
+  const completePuzzle = useCallback(
+    async (puzzleId, solution) => {
+      setSubmitting(true);
+      setError(null);
+      setFeedback(null);
+
+      try {
+        // Frontend computes hash consistently
+        const hashBytes = await computeSolutionHash(solution);
+
+        const args = [
+          Address.fromString(walletAddress || (await ensureWallet())).toScVal(),
+          nativeToScVal(BigInt(puzzleId), { type: "u64" }),
+          xdr.ScVal.scvBytes(hashBytes),
+        ];
+
+        const result = await invokeContract("complete_puzzle", args);
+        const isCorrect = scValToNative(result.returnValue);
+
+        const fb = {
+          correct: isCorrect,
+          message: isCorrect
+            ? "🎉 Puzzle completed successfully!"
+            : "❌ Incorrect puzzle solution. Try again!",
         };
         setFeedback(fb);
         return { ...fb, submitted: true };
@@ -330,9 +402,9 @@ export function usePuzzleContract(opts = {}) {
         setLastHint(hint);
         return hint;
       } catch (err) {
-        const message = err.message || "Failed to fetch hint";
+        const message = classifyWalletError(err, "Failed to fetch hint");
         setError(message);
-        throw err;
+        throw new Error(message);
       } finally {
         setHintLoading(false);
       }
@@ -360,6 +432,8 @@ export function usePuzzleContract(opts = {}) {
     disconnectWallet,
     refreshWallet,
     submitAnswer,
+    completePuzzle,
+    computeSolutionHash,
     requestHint,
     clearFeedback,
     checkWallet,

@@ -64,6 +64,26 @@ pub struct LevelProgress {
     pub last_attempt_ledger: u32,
 }
 
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct HuntEvent {
+    pub event_id: u64,
+    pub start_time: u64,
+    pub end_time: u64,
+    pub multiplier_bps: u32,
+    pub active: bool,
+}
+
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct BadgeStake {
+    pub player: Address,
+    pub event_id: u64,
+    pub level: Levels,
+    pub staked_at: u64,
+    pub is_slashed: bool,
+}
+
 // ---------------------------------------------------------------------
 // Versioned (V2) record shapes (issue #463)
 //
@@ -109,6 +129,7 @@ pub struct LevelProgressV2 {
 pub enum DataKey {
     Admin,
     PendingAdmin,
+    Upgrader,
     NftContract,
     QuestionCount,
     QuestionPerLevel,
@@ -131,6 +152,8 @@ pub enum DataKey {
     /// Whether `Address` currently holds `Role`. Present and set to `true`
     /// only while the role is granted; revoked roles are removed.
     Role(Address, Role),
+    Event(u64),
+    BadgeStake(Address, u64, Levels),
 }
 
 // ---------------------------------------------------------------------
@@ -297,6 +320,15 @@ pub enum Error {
     ArithmeticOverflow = 12,
     ContractPaused = 13,
     SchemaVersionMismatch = 14,
+    QuestionRetired = 15,
+    WrongQuestion = 16,
+    EventNotFound = 17,
+    EventNotActive = 18,
+    EventExpired = 19,
+    AlreadyStaked = 20,
+    StakeNotFound = 21,
+    StakeSlashed = 22,
+    BadgeNotOwned = 23,
     // Appended for the retirement-semantics guard (#447): submitting or
     // requesting a hint for a retired question, and submitting a question
     // other than the one the player's level cursor expects. New variants
@@ -307,6 +339,10 @@ pub enum Error {
     InputTooLarge = 18,
     CapWouldMakeLevelUnreachable = 19,
     CapBelowExistingIndex = 20,
+    HashMismatch = 21,
+    AlreadyCompleted = 22,
+    RewardTransferFailed = 23,
+    MissingRewardToken = 24,
 }
 
 // ---------------------------------------------------------------------
@@ -325,7 +361,44 @@ impl StellarHunts {
         }
         admin.require_auth();
         env.storage().instance().set(&DataKey::Admin, &admin);
+        env.storage().instance().set(&DataKey::Upgrader, &admin);
         set_schema_version(&env);
+        env.events().publish(
+            (Symbol::new(&env, "game_initialized"),),
+            (admin, CURRENT_SCHEMA_VERSION),
+        );
+    }
+
+    pub fn set_upgrader(env: Env, upgrader: Address) {
+        require_admin(&env);
+        env.storage()
+            .instance()
+            .set(&DataKey::Upgrader, &upgrader);
+        env.events().publish(
+            (Symbol::new(&env, "upgrader_updated"),),
+            (upgrader,),
+        );
+    }
+
+    pub fn get_upgrader(env: Env) -> Address {
+        env.storage()
+            .instance()
+            .get(&DataKey::Upgrader)
+            .or_else(|| env.storage().instance().get(&DataKey::Admin))
+            .unwrap_or_else(|| panic_with_error!(&env, Error::NotInitialized))
+    }
+
+    /// WASM contract upgrade guarded by upgrader role check (#678).
+    pub fn upgrade(env: Env, new_wasm_hash: BytesN<32>) {
+        let upgrader = Self::get_upgrader(env.clone());
+        upgrader.require_auth();
+
+        env.events().publish(
+            (Symbol::new(&env, "contract_upgraded"),),
+            (upgrader, new_wasm_hash.clone()),
+        );
+
+        env.deployer().update_current_contract_wasm(new_wasm_hash);
     }
 
     pub fn propose_admin(env: Env, new_admin: Address) {
@@ -465,6 +538,62 @@ impl StellarHunts {
             .publish((Symbol::new(&env, "question_added"),), (question_id, level));
     }
 
+    /// Adds a question with a precomputed solution hash (issue #683).
+    pub fn add_question_with_hash(
+        env: Env,
+        level: Levels,
+        question: Bytes,
+        hashed_answer: BytesN<32>,
+        hint: Bytes,
+    ) -> u64 {
+        require_admin(&env);
+
+        if question.is_empty() || hint.is_empty() {
+            panic_with_error!(&env, Error::EmptyField);
+        }
+        if question.len() > MAX_QUESTION_LEN || hint.len() > MAX_HINT_LEN {
+            panic_with_error!(&env, Error::InputTooLarge);
+        }
+
+        let count: u64 = env
+            .storage()
+            .instance()
+            .get(&DataKey::QuestionCount)
+            .unwrap_or(0u64);
+        let question_id = count
+            .checked_add(1)
+            .unwrap_or_else(|| panic_with_error!(&env, Error::ArithmeticOverflow));
+        env.storage()
+            .instance()
+            .set(&DataKey::QuestionCount, &question_id);
+
+        let q = Question {
+            question_id,
+            question: question.clone(),
+            hashed_answer,
+            level: level.clone(),
+            hint: hint.clone(),
+            version: CURRENT_SCHEMA_VERSION,
+        };
+        env.storage()
+            .persistent()
+            .set(&DataKey::Question(question_id), &q);
+
+        let per_level: u32 = get_cap_for_level(&env, &level);
+        let idx = index_count(&env, &level);
+
+        if idx >= per_level {
+            panic_with_error!(&env, Error::QuestionPerLevelLimit);
+        }
+
+        index_append(&env, &level, question_id).unwrap_or_else(|e| panic_with_error!(&env, e));
+
+        env.events()
+            .publish((Symbol::new(&env, "question_added"),), (question_id, level));
+
+        question_id
+    }
+
     pub fn update_question(
         env: Env,
         question_id: u64,
@@ -546,6 +675,10 @@ impl StellarHunts {
         env.storage()
             .instance()
             .set(&DataKey::QuestionPerLevel, &amount);
+        env.events().publish(
+            (Symbol::new(&env, "question_per_level_updated"),),
+            (amount,),
+        );
     }
 
     /// Set a question cap for a specific level (issue #467).
@@ -609,6 +742,48 @@ impl StellarHunts {
             (Symbol::new(&env, "nft_contract_updated"),),
             (old, new_address),
         );
+    }
+
+    /// Sets the reward token contract address for reward payouts (issue #680).
+    pub fn set_reward_token(env: Env, token: Address) {
+        require_admin(&env);
+        env.storage().instance().set(&DataKey::RewardToken, &token);
+        env.events().publish(
+            (Symbol::new(&env, "reward_token_updated"),),
+            (token,),
+        );
+    }
+
+    /// Gets the configured reward token contract address (issue #680).
+    pub fn get_reward_token(env: Env) -> Option<Address> {
+        env.storage().instance().get(&DataKey::RewardToken)
+    }
+
+    /// Sets the default reward token payout amount for puzzle completions (issue #680).
+    pub fn set_default_reward_amount(env: Env, amount: i128) {
+        require_admin(&env);
+        if amount < 0 {
+            panic_with_error!(&env, Error::InvalidInput);
+        }
+        env.storage().instance().set(&DataKey::DefaultRewardAmount, &amount);
+    }
+
+    /// Sets a puzzle-specific reward token payout amount (issue #680).
+    pub fn set_puzzle_reward_amount(env: Env, puzzle_id: u64, amount: i128) {
+        require_admin(&env);
+        if amount < 0 {
+            panic_with_error!(&env, Error::InvalidInput);
+        }
+        env.storage().instance().set(&DataKey::PuzzleRewardAmount(puzzle_id), &amount);
+    }
+
+    /// Gets the reward amount for a given puzzle (issue #680).
+    pub fn get_puzzle_reward_amount(env: Env, puzzle_id: u64) -> i128 {
+        env.storage()
+            .instance()
+            .get(&DataKey::PuzzleRewardAmount(puzzle_id))
+            .or_else(|| env.storage().instance().get(&DataKey::DefaultRewardAmount))
+            .unwrap_or(0i128)
     }
 
     // -----------------------------------------------------------------
@@ -692,8 +867,15 @@ impl StellarHunts {
             .checked_add(1)
             .unwrap_or_else(|| panic_with_error!(&env, Error::ArithmeticOverflow));
 
-        let hashed: BytesN<32> = env.crypto().sha256(&answer).into();
-        let is_correct = hashed == question.hashed_answer;
+        let is_correct = if answer.len() == 32 {
+            let mut arr = [0u8; 32];
+            answer.copy_into_slice(&mut arr);
+            let submitted_hash = BytesN::from_array(&env, &arr);
+            submitted_hash == question.hashed_answer
+        } else {
+            let hashed: BytesN<32> = env.crypto().sha256(&answer).into();
+            hashed == question.hashed_answer
+        };
 
         if is_correct {
             lp.last_question_index = lp
@@ -736,6 +918,190 @@ impl StellarHunts {
             ),
         );
         is_correct
+    }
+
+    /// Records puzzle completion on-chain and validates solution hash (issues #670, #683, #680).
+    ///
+    /// Validates submitted solution by comparing hash with stored hashed_answer.
+    /// Rejects hash mismatch with Error::HashMismatch.
+    /// Rejects duplicate completions with Error::AlreadyCompleted.
+    /// Emits `puzzle_completed` event with (player, puzzle_id).
+    /// Integrates reward token payout if reward token is configured.
+    pub fn complete_puzzle(
+        env: Env,
+        caller: Address,
+        puzzle_id: u64,
+        solution_hash: BytesN<32>,
+    ) -> bool {
+        if env
+            .storage()
+            .instance()
+            .get(&DataKey::Paused)
+            .unwrap_or(false)
+        {
+            panic_with_error!(&env, Error::ContractPaused);
+        }
+        caller.require_auth();
+
+        if puzzle_id == 0 {
+            panic_with_error!(&env, Error::QuestionNotFound);
+        }
+
+        let key = DataKey::Question(puzzle_id);
+        let question: Question = env
+            .storage()
+            .persistent()
+            .get(&key)
+            .unwrap_or_else(|| panic_with_error!(&env, Error::QuestionNotFound));
+
+        if env
+            .storage()
+            .persistent()
+            .has(&DataKey::RetiredQuestion(puzzle_id))
+        {
+            panic_with_error!(&env, Error::QuestionRetired);
+        }
+
+        // Verify submitted solution by comparing hashes (#683)
+        if solution_hash != question.hashed_answer {
+            panic_with_error!(&env, Error::HashMismatch);
+        }
+
+        let completion_key = DataKey::CompletedPuzzle(caller.clone(), puzzle_id);
+        if env.storage().persistent().has(&completion_key) {
+            panic_with_error!(&env, Error::AlreadyCompleted);
+        }
+
+        // Record puzzle completion on-chain (#670)
+        env.storage().persistent().set(&completion_key, &true);
+
+        // Cross-contract call to token contract for reward payouts (#680)
+        Self::try_payout_reward(&env, &caller, puzzle_id);
+
+        // Emit event with player address and puzzle id (#670)
+        env.events().publish(
+            (Symbol::new(&env, "puzzle_completed"),),
+            (caller, puzzle_id),
+        );
+
+        true
+    }
+
+    /// Verifies if a solution hash matches a question's stored hash (issue #683).
+    pub fn verify_solution_hash(env: Env, puzzle_id: u64, solution_hash: BytesN<32>) -> bool {
+        if puzzle_id == 0 {
+            panic_with_error!(&env, Error::QuestionNotFound);
+        }
+        let key = DataKey::Question(puzzle_id);
+        let question: Question = env
+            .storage()
+            .persistent()
+            .get(&key)
+            .unwrap_or_else(|| panic_with_error!(&env, Error::QuestionNotFound));
+        question.hashed_answer == solution_hash
+    }
+
+    /// Checks if a player has recorded completion for a puzzle (issue #670).
+    pub fn is_puzzle_completed(env: Env, player: Address, puzzle_id: u64) -> bool {
+        env.storage()
+            .persistent()
+            .has(&DataKey::CompletedPuzzle(player, puzzle_id))
+    }
+
+    /// Allows claiming reward payout for an already completed puzzle (issue #680).
+    pub fn claim_puzzle_reward(env: Env, caller: Address, puzzle_id: u64) {
+        if env
+            .storage()
+            .instance()
+            .get(&DataKey::Paused)
+            .unwrap_or(false)
+        {
+            panic_with_error!(&env, Error::ContractPaused);
+        }
+        caller.require_auth();
+
+        if !Self::is_puzzle_completed(env.clone(), caller.clone(), puzzle_id) {
+            panic_with_error!(&env, Error::QuestionNotFound);
+        }
+
+        Self::try_payout_reward(&env, &caller, puzzle_id);
+    }
+
+    /// Claims an NFT badge reward for a completed puzzle (issue #671).
+    pub fn claim_puzzle_nft(
+        env: Env,
+        caller: Address,
+        puzzle_id: u64,
+        puzzle_name: soroban_sdk::String,
+        difficulty: soroban_sdk::String,
+    ) {
+        if env
+            .storage()
+            .instance()
+            .get(&DataKey::Paused)
+            .unwrap_or(false)
+        {
+            panic_with_error!(&env, Error::ContractPaused);
+        }
+        caller.require_auth();
+
+        if !Self::is_puzzle_completed(env.clone(), caller.clone(), puzzle_id) {
+            panic_with_error!(&env, Error::QuestionNotFound);
+        }
+
+        let nft_contract: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::NftContract)
+            .ok_or(Error::MissingNftContract)
+            .unwrap();
+
+        stellar_hunts_nft::StellarHuntsNftClient::new(&env, &nft_contract).mint_puzzle_reward_nft(
+            &env.current_contract_address(),
+            &caller,
+            &puzzle_id,
+            &puzzle_name,
+            &difficulty,
+        );
+
+        env.events().publish(
+            (Symbol::new(&env, "puzzle_nft_claimed"),),
+            (caller, puzzle_id),
+        );
+    }
+
+    /// Helper for cross-contract call to token contract for reward payouts (issue #680).
+    fn try_payout_reward(env: &Env, recipient: &Address, puzzle_id: u64) {
+        if let Some(token_address) = env
+            .storage()
+            .instance()
+            .get::<DataKey, Address>(&DataKey::RewardToken)
+        {
+            let amount: i128 = env
+                .storage()
+                .instance()
+                .get(&DataKey::PuzzleRewardAmount(puzzle_id))
+                .or_else(|| env.storage().instance().get(&DataKey::DefaultRewardAmount))
+                .unwrap_or(0i128);
+
+            if amount > 0 {
+                let token_client = soroban_sdk::token::Client::new(env, &token_address);
+                let contract_address = env.current_contract_address();
+                let transfer_result =
+                    token_client.try_transfer(&contract_address, recipient, &amount);
+                match transfer_result {
+                    Ok(Ok(())) => {
+                        env.events().publish(
+                            (Symbol::new(env, "reward_paid"),),
+                            (recipient.clone(), puzzle_id, amount),
+                        );
+                    }
+                    _ => {
+                        panic_with_error!(env, Error::RewardTransferFailed);
+                    }
+                }
+            }
+        }
     }
 
     pub fn request_hint(env: Env, caller: Address, question_id: u64) -> Bytes {
@@ -999,16 +1365,22 @@ impl StellarHunts {
 
     pub fn pause(env: Env) {
         require_admin(&env);
+        let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
         env.storage().instance().set(&DataKey::Paused, &true);
-        env.events()
-            .publish((Symbol::new(&env, "paused"),), ());
+        env.events().publish(
+            (Symbol::new(&env, "contract_paused"),),
+            (admin,),
+        );
     }
 
     pub fn unpause(env: Env) {
         require_admin(&env);
+        let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
         env.storage().instance().set(&DataKey::Paused, &false);
-        env.events()
-            .publish((Symbol::new(&env, "unpaused"),), ());
+        env.events().publish(
+            (Symbol::new(&env, "contract_unpaused"),),
+            (admin,),
+        );
     }
 
     pub fn is_paused(env: Env) -> bool {
@@ -1016,6 +1388,185 @@ impl StellarHunts {
             .instance()
             .get(&DataKey::Paused)
             .unwrap_or(false)
+    }
+
+    // -----------------------------------------------------------------
+    // Staking for score multipliers (#675)
+    // -----------------------------------------------------------------
+
+    /// Creates a hunt event with an active time window and a multiplier (in basis points, e.g. 150 = 1.5x).
+    pub fn create_event(
+        env: Env,
+        event_id: u64,
+        start_time: u64,
+        end_time: u64,
+        multiplier_bps: u32,
+    ) {
+        require_admin(&env);
+        if start_time >= end_time || multiplier_bps < 100 {
+            panic_with_error!(&env, Error::EmptyField);
+        }
+        let event = HuntEvent {
+            event_id,
+            start_time,
+            end_time,
+            multiplier_bps,
+            active: true,
+        };
+        env.storage()
+            .persistent()
+            .set(&DataKey::Event(event_id), &event);
+        env.events().publish(
+            (Symbol::new(&env, "event_created"),),
+            (event_id, start_time, end_time, multiplier_bps),
+        );
+    }
+
+    pub fn get_event(env: Env, event_id: u64) -> HuntEvent {
+        env.storage()
+            .persistent()
+            .get(&DataKey::Event(event_id))
+            .ok_or(Error::EventNotFound)
+            .unwrap()
+    }
+
+    /// Stake a level badge NFT to activate a score multiplier for an active event (#675).
+    pub fn stake_badge(env: Env, player: Address, event_id: u64, level: Levels) {
+        if env
+            .storage()
+            .instance()
+            .get(&DataKey::Paused)
+            .unwrap_or(false)
+        {
+            panic_with_error!(&env, Error::ContractPaused);
+        }
+        player.require_auth();
+
+        let event = Self::get_event(env.clone(), event_id);
+        let now = env.ledger().timestamp();
+        if !event.active || now < event.start_time || now > event.end_time {
+            panic_with_error!(&env, Error::EventNotActive);
+        }
+
+        let nft_contract: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::NftContract)
+            .ok_or(Error::MissingNftContract)
+            .unwrap();
+
+        let has_badge = stellar_hunts_nft::StellarHuntsNftClient::new(&env, &nft_contract)
+            .has_level_badge(&player, &level);
+        if !has_badge {
+            panic_with_error!(&env, Error::BadgeNotOwned);
+        }
+
+        let stake_key = DataKey::BadgeStake(player.clone(), event_id, level.clone());
+        if env.storage().persistent().has(&stake_key) {
+            panic_with_error!(&env, Error::AlreadyStaked);
+        }
+
+        let stake = BadgeStake {
+            player: player.clone(),
+            event_id,
+            level: level.clone(),
+            staked_at: now,
+            is_slashed: false,
+        };
+        env.storage().persistent().set(&stake_key, &stake);
+
+        env.events().publish(
+            (Symbol::new(&env, "badge_staked"),),
+            (player, event_id, level),
+        );
+    }
+
+    /// Unstake a badge NFT after or during an active event (#675).
+    pub fn unstake_badge(env: Env, player: Address, event_id: u64, level: Levels) {
+        player.require_auth();
+
+        let stake_key = DataKey::BadgeStake(player.clone(), event_id, level.clone());
+        let stake: BadgeStake = env
+            .storage()
+            .persistent()
+            .get(&stake_key)
+            .ok_or(Error::StakeNotFound)
+            .unwrap();
+
+        if stake.is_slashed {
+            panic_with_error!(&env, Error::StakeSlashed);
+        }
+
+        env.storage().persistent().remove(&stake_key);
+
+        env.events().publish(
+            (Symbol::new(&env, "badge_unstaked"),),
+            (player, event_id, level),
+        );
+    }
+
+    /// Slashing logic for stakes in expired events (#675).
+    pub fn slash_expired_stake(env: Env, player: Address, event_id: u64, level: Levels) {
+        let event = Self::get_event(env.clone(), event_id);
+        let now = env.ledger().timestamp();
+        if now <= event.end_time {
+            panic_with_error!(&env, Error::EventNotActive);
+        }
+
+        let stake_key = DataKey::BadgeStake(player.clone(), event_id, level.clone());
+        let mut stake: BadgeStake = env
+            .storage()
+            .persistent()
+            .get(&stake_key)
+            .ok_or(Error::StakeNotFound)
+            .unwrap();
+
+        if stake.is_slashed {
+            return;
+        }
+
+        stake.is_slashed = true;
+        env.storage().persistent().set(&stake_key, &stake);
+
+        env.events().publish(
+            (Symbol::new(&env, "stake_slashed"),),
+            (player, event_id, level),
+        );
+    }
+
+    /// Returns the active score multiplier in basis points (100 = 1.0x).
+    /// Multiplier applies only within the active event window (#675).
+    pub fn get_player_multiplier(
+        env: Env,
+        player: Address,
+        event_id: u64,
+        level: Levels,
+    ) -> u32 {
+        let event = match env.storage().persistent().get(&DataKey::Event(event_id)) {
+            Some(e) => e,
+            None => return 100,
+        };
+        let now = env.ledger().timestamp();
+        if !event.active || now < event.start_time || now > event.end_time {
+            return 100;
+        }
+
+        let stake_key = DataKey::BadgeStake(player, event_id, level);
+        match env.storage().persistent().get::<DataKey, BadgeStake>(&stake_key) {
+            Some(stake) if !stake.is_slashed => event.multiplier_bps,
+            _ => 100,
+        }
+    }
+
+    /// Inspect a player's badge stake.
+    pub fn get_stake(
+        env: Env,
+        player: Address,
+        event_id: u64,
+        level: Levels,
+    ) -> Option<BadgeStake> {
+        let stake_key = DataKey::BadgeStake(player, event_id, level);
+        env.storage().persistent().get(&stake_key)
     }
 
     pub fn get_schema_version(e: Env) -> u32 {

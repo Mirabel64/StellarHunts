@@ -45,7 +45,7 @@ export default function AdminPuzzleReviewPage() {
               </div>
             </div>
           </div>
-          
+
           <Suspense fallback={<LoadingSpinner />}>
             <PuzzleReviewDashboard />
           </Suspense>

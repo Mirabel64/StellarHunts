@@ -54,14 +54,16 @@ export class CreateContentsTable1700000000000 implements MigrationInterface {
       true,
     );
 
-    // Create index on topic for better query performance
+    // Create index on topic for better query performance. Identifiers are
+    // quoted because TypeORM creates the camelCase "isActive" column with
+    // quotes; an unquoted reference folds to `isactive` and fails.
     await queryRunner.query(
-      'CREATE INDEX IDX_CONTENTS_TOPIC ON contents (topic)',
+      'CREATE INDEX "IDX_CONTENTS_TOPIC" ON contents (topic)',
     );
 
     // Create index on isActive for filtering active content
     await queryRunner.query(
-      'CREATE INDEX IDX_CONTENTS_IS_ACTIVE ON contents (isActive)',
+      'CREATE INDEX "IDX_CONTENTS_IS_ACTIVE" ON contents ("isActive")',
     );
   }
 

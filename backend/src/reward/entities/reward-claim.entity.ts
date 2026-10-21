@@ -15,6 +15,14 @@ import { Reward } from './reward.entity';
 export class RewardClaim {
   @Column({ unique: true, nullable: true })
   claimKey?: string;
+
+  @ApiProperty({
+    description: 'Deduplication key per (user, event) for idempotent transaction retries',
+    required: false,
+  })
+  @Column({ type: 'varchar', length: 255, unique: true, nullable: true })
+  @Index({ unique: true })
+  dedupeKey?: string | null;
   @ApiProperty({ description: 'Unique identifier for the reward claim' })
   @PrimaryGeneratedColumn('uuid')
   id: string;

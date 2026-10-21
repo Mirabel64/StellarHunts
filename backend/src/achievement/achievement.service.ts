@@ -1,8 +1,10 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { PlayerAchievement } from './entities/player-achievement.entity';
 import { Achievement, RuleType } from './entities/achievement.entity';
+import { InAppNotificationsService } from '../in-app-notifications/in-app-notifications.service';
+import { InAppNotificationType } from '../in-app-notifications/entities/in-app-notification.entity';
 
 export interface GameEvent {
   playerId: string;
@@ -25,6 +27,8 @@ export class AchievementService {
     private achievementRepository: Repository<Achievement>,
     @InjectRepository(PlayerAchievement)
     private playerAchievementRepository: Repository<PlayerAchievement>,
+    @Optional()
+    private readonly notifications?: InAppNotificationsService,
   ) {}
 
   async getPlayerAchievements(playerId: string): Promise<PlayerAchievement[]> {
@@ -171,6 +175,7 @@ export class AchievementService {
       this.logger.log(
         `Achievement ${achievementId} awarded to player ${playerId}`,
       );
+      await this.notifyUnlock(playerId, achievementId);
     } catch (error) {
       if (error.code === '23505') {
         // Unique constraint violation
@@ -181,6 +186,36 @@ export class AchievementService {
         this.logger.error(`Failed to award achievement: ${error.message}`);
         throw error;
       }
+    }
+  }
+
+  /**
+   * Tells the player about a new unlock. Only reached after the unique
+   * (player, achievement) row was inserted, so a replayed event cannot send a
+   * second notification. A notification failure never fails the award.
+   */
+  private async notifyUnlock(
+    playerId: string,
+    achievementId: string,
+  ): Promise<void> {
+    const userId = Number(playerId);
+    if (!this.notifications || !Number.isInteger(userId)) return;
+    try {
+      const achievement = await this.achievementRepository.findOne({
+        where: { id: achievementId },
+      });
+      await this.notifications.createNotification({
+        userId,
+        title: 'Achievement unlocked!',
+        message: achievement?.title
+          ? `You unlocked "${achievement.title}".`
+          : 'You unlocked a new achievement.',
+        type: InAppNotificationType.REWARD,
+      });
+    } catch (error) {
+      this.logger.warn(
+        `Could not send unlock notification to ${playerId}: ${(error as Error).message}`,
+      );
     }
   }
 

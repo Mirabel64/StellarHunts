@@ -86,4 +86,4 @@ const ReferralLink = ({ referralLink }) => {
   );
 };
 
-export default ReferralLink; 
+export default ReferralLink;

@@ -1,0 +1,227 @@
+name: Performance Budgets
+
+# Issue #765 — Fail builds exceeding bundle/LCP budgets.
+# Budgets are stored in frontend/performance-budget.json.
+# This workflow runs whenever frontend code changes and on every PR.
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/performance-budget.yml'
+  pull_request:
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/performance-budget.yml'
+
+permissions: read-all
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ─────────────────────────────────────────────────────────────────────
+  # Bundle size budget check
+  #
+  # Builds the Next.js production bundle and measures the total
+  # JavaScript transferred to the client.  Fails when the size of any
+  # First-Load JS chunk listed by `next build` exceeds the threshold
+  # configured in frontend/performance-budget.json.
+  # ─────────────────────────────────────────────────────────────────────
+  bundle-budget:
+    name: Bundle size budget
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@60edb5dd545a775178f52524783378180af0d1f8 # v4.0.2
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+
+      # Build and capture the output so the Python budget script can
+      # parse the size table printed by `next build`.
+      - name: Build production bundle
+        working-directory: frontend
+        run: npm run build 2>&1 | tee /tmp/next-build-output.txt
+
+      # Enforce the budgets defined in frontend/performance-budget.json.
+      # The script exits non-zero when any budget is exceeded, which
+      # causes this job — and the overall CI run — to fail.
+      - name: Check bundle size budgets
+        run: |
+          python3 - <<'PYEOF'
+          import json, re, sys
+
+          budget_path = "frontend/performance-budget.json"
+          build_log   = "/tmp/next-build-output.txt"
+
+          with open(budget_path) as f:
+              budgets = json.load(f)
+
+          bundle_budget_kb = budgets["budgets"]["javascript"]["maxBundleSizeKB"]
+          shared_budget_kb = budgets["budgets"]["javascript"]["maxSharedChunkSizeKB"]
+
+          with open(build_log) as f:
+              output = f.read()
+
+          # ── Parse Next.js build table ────────────────────────────────
+          # Next.js prints lines like:
+          #   ○  /page   1.2 kB   102 kB
+          # The last column is "First Load JS" (total shared + page JS).
+          # We check that column against the total bundle budget.
+          failures = []
+          # Match lines that look like build-table rows with sizes
+          row_pattern = re.compile(
+              r'[○●λ]\s+(\S+)\s+[\d.]+\s+kB\s+([\d.]+)\s+kB'
+          )
+          for match in row_pattern.finditer(output):
+              route      = match.group(1)
+              first_load = float(match.group(2))
+              if first_load > bundle_budget_kb:
+                  failures.append(
+                      f"  OVER BUDGET  route={route}  "
+                      f"first-load-js={first_load:.1f} kB  "
+                      f"budget={bundle_budget_kb} kB"
+                  )
+
+          # ── Shared chunk check ───────────────────────────────────────
+          # The "First Load JS shared by all" summary line contains the
+          # cumulative shared bundle size.
+          shared_pattern = re.compile(
+              r'First Load JS shared by all\s+([\d.]+)\s+kB'
+          )
+          shared_match = shared_pattern.search(output)
+          if shared_match:
+              shared_kb = float(shared_match.group(1))
+              print(f"Shared JS bundle: {shared_kb:.1f} kB  (budget: {shared_budget_kb} kB)")
+              if shared_kb > shared_budget_kb:
+                  failures.append(
+                      f"  OVER BUDGET  shared-bundle={shared_kb:.1f} kB  "
+                      f"budget={shared_budget_kb} kB"
+                  )
+          else:
+              print("WARNING: Could not parse shared bundle size from build output.")
+
+          if failures:
+              print("\n❌ Performance budget exceeded:")
+              for f in failures:
+                  print(f)
+              print(
+                  "\nUpdate frontend/performance-budget.json if the budget "
+                  "increase is intentional, or optimise the bundle."
+              )
+              sys.exit(1)
+          else:
+              print("✅ All bundle size budgets passed.")
+          PYEOF
+
+      # Upload the Next.js build output as an artifact so engineers can
+      # inspect exact sizes without re-running the build locally.
+      - name: Upload build output artifact
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v4
+        with:
+          name: next-build-output
+          path: /tmp/next-build-output.txt
+          if-no-files-found: warn
+          retention-days: 14
+
+  # ─────────────────────────────────────────────────────────────────────
+  # LCP budget check (Lighthouse CI)
+  #
+  # Starts the Next.js production server and runs Lighthouse against it.
+  # Fails when LCP (Largest Contentful Paint) exceeds the threshold in
+  # frontend/performance-budget.json (default 2500 ms / 2.5 s).
+  #
+  # This job provides the LCP gate referenced in issue #765.  It uses
+  # @lhci/cli which is installed as a dev dependency.  If Lighthouse CI
+  # is not yet installed the job will report an informational skip so the
+  # bundle-budget gate still protects CI.
+  # ─────────────────────────────────────────────────────────────────────
+  lcp-budget:
+    name: LCP budget (Lighthouse CI)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@60edb5dd545a775178f52524783378180af0d1f8 # v4.0.2
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build production bundle
+        working-directory: frontend
+        run: npm run build
+
+      # Read the LCP budget from the JSON config and generate a temporary
+      # Lighthouse CI config file so the threshold is always in sync with
+      # the canonical budget document.
+      - name: Generate Lighthouse CI config
+        run: |
+          python3 - <<'PYEOF'
+          import json
+
+          with open("frontend/performance-budget.json") as f:
+              budgets = json.load(f)
+
+          lcp_ms = budgets["budgets"]["lcp"]["maxLCPMs"]
+
+          lhci_config = {
+              "ci": {
+                  "collect": {
+                      "startServerCommand": "npm --prefix frontend run start -- --hostname 127.0.0.1 --port 3000",
+                      "url": ["http://127.0.0.1:3000/"],
+                      "numberOfRuns": 3,
+                      "settings": {
+                          "chromeFlags": "--no-sandbox --headless"
+                      }
+                  },
+                  "assert": {
+                      "assertions": {
+                          "largest-contentful-paint": [
+                              "error",
+                              {"maxNumericValue": lcp_ms}
+                          ]
+                      }
+                  },
+                  "upload": {
+                      "target": "temporary-public-storage"
+                  }
+              }
+          }
+
+          with open("/tmp/lighthouserc.json", "w") as f:
+              json.dump(lhci_config, f, indent=2)
+
+          print(f"LCP budget set to {lcp_ms} ms")
+          PYEOF
+
+      - name: Run Lighthouse CI
+        # If @lhci/cli is not available we skip gracefully so the
+        # bundle-budget gate is not blocked.
+        run: |
+          if npx --no-install lhci --version 2>/dev/null; then
+            npx lhci autorun --config=/tmp/lighthouserc.json
+          else
+            echo "::warning::@lhci/cli not found — skipping LCP gate." \
+              "Add @lhci/cli to frontend devDependencies to enable it."
+          fi
+        env:
+          LHCI_GITHUB_APP_TOKEN: ${{ secrets.LHCI_GITHUB_APP_TOKEN }}

@@ -34,7 +34,7 @@ export class DraftPuzzleService {
     if (draft.status === 'published') {
       throw new BadRequestException('Cannot edit a published draft.');
     }
-    
+
     if (updateDto.status) {
       const allowedTransitions: Record<string, string[]> = {
         draft: ['review'],
