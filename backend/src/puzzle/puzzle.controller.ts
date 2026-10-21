@@ -33,6 +33,13 @@ import { UpdatePuzzleDto } from './dto/update-puzzle.dto';
 export class PuzzleController {
   constructor(private readonly puzzleService: PuzzleService) {}
 
+  @Get('puzzles/daily')
+  @ApiOperation({ summary: "Today's featured puzzle (rotates at UTC midnight)" })
+  @ApiResponse({ status: 200, description: 'Featured puzzle with bonus XP.' })
+  getDaily() {
+    return this.puzzleService.getDailyPuzzle();
+  }
+
   @Post('admin/puzzles')
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard)

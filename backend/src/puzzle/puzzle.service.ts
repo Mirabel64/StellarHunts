@@ -6,6 +6,8 @@ import { Puzzle } from './puzzle.entity';
 import { CreatePuzzleDto } from './dto/create-puzzle.dto';
 import { UpdatePuzzleDto } from './dto/update-puzzle.dto';
 import { sanitizeText } from '../common/sanitize-text';
+import { CRYPTOGRAPHY_PUZZLES } from './content/cryptography-puzzles';
+import { DAILY_BONUS_XP, pickDailyPuzzleId, utcDayKey } from './daily-puzzle';
 
 @Injectable()
 export class PuzzleService {
@@ -57,6 +59,47 @@ export class PuzzleService {
     await this.auditLogService.createLog(actorId, 'puzzle.delete', {
       puzzleId: id,
     });
+  }
+
+  /** The featured puzzle for today (UTC), without its solution or hint. */
+  async getDailyPuzzle(now: Date = new Date()) {
+    const active = await this.puzzleRepository.find({ where: { isActive: true } });
+    const id = pickDailyPuzzleId(
+      active.map((p) => p.id),
+      now,
+    );
+    const puzzle = active.find((p) => p.id === id);
+    if (!puzzle) throw new NotFoundException('No puzzle is available today');
+    return {
+      id: puzzle.id,
+      title: puzzle.title,
+      description: puzzle.description,
+      difficulty: puzzle.difficulty,
+      day: utcDayKey(now),
+      bonusXp: DAILY_BONUS_XP,
+    };
+  }
+
+  /** Inserts the cryptography puzzle set, skipping titles that already exist. */
+  async seedCryptographyPuzzles(): Promise<number> {
+    let created = 0;
+    for (const item of CRYPTOGRAPHY_PUZZLES) {
+      const exists = await this.puzzleRepository.findOne({
+        where: { title: item.title },
+      });
+      if (exists) continue;
+      await this.puzzleRepository.save(
+        this.puzzleRepository.create({
+          title: item.title,
+          description: item.description,
+          difficulty: item.difficulty,
+          solution: item.solution,
+          hint: item.hints[0],
+        }),
+      );
+      created += 1;
+    }
+    return created;
   }
 
   async findActive(difficulty?: string): Promise<Partial<Puzzle>[]> {
