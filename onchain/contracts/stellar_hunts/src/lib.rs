@@ -64,6 +64,26 @@ pub struct LevelProgress {
     pub last_attempt_ledger: u32,
 }
 
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct HuntEvent {
+    pub event_id: u64,
+    pub start_time: u64,
+    pub end_time: u64,
+    pub multiplier_bps: u32,
+    pub active: bool,
+}
+
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct BadgeStake {
+    pub player: Address,
+    pub event_id: u64,
+    pub level: Levels,
+    pub staked_at: u64,
+    pub is_slashed: bool,
+}
+
 // ---------------------------------------------------------------------
 // Versioned (V2) record shapes (issue #463)
 //
@@ -109,6 +129,7 @@ pub struct LevelProgressV2 {
 pub enum DataKey {
     Admin,
     PendingAdmin,
+    Upgrader,
     NftContract,
     QuestionCount,
     QuestionPerLevel,
@@ -131,6 +152,8 @@ pub enum DataKey {
     /// Whether `Address` currently holds `Role`. Present and set to `true`
     /// only while the role is granted; revoked roles are removed.
     Role(Address, Role),
+    Event(u64),
+    BadgeStake(Address, u64, Levels),
 }
 
 // ---------------------------------------------------------------------
@@ -297,6 +320,15 @@ pub enum Error {
     ArithmeticOverflow = 12,
     ContractPaused = 13,
     SchemaVersionMismatch = 14,
+    QuestionRetired = 15,
+    WrongQuestion = 16,
+    EventNotFound = 17,
+    EventNotActive = 18,
+    EventExpired = 19,
+    AlreadyStaked = 20,
+    StakeNotFound = 21,
+    StakeSlashed = 22,
+    BadgeNotOwned = 23,
     // Appended for the retirement-semantics guard (#447): submitting or
     // requesting a hint for a retired question, and submitting a question
     // other than the one the player's level cursor expects. New variants
@@ -325,7 +357,44 @@ impl StellarHunts {
         }
         admin.require_auth();
         env.storage().instance().set(&DataKey::Admin, &admin);
+        env.storage().instance().set(&DataKey::Upgrader, &admin);
         set_schema_version(&env);
+        env.events().publish(
+            (Symbol::new(&env, "game_initialized"),),
+            (admin, CURRENT_SCHEMA_VERSION),
+        );
+    }
+
+    pub fn set_upgrader(env: Env, upgrader: Address) {
+        require_admin(&env);
+        env.storage()
+            .instance()
+            .set(&DataKey::Upgrader, &upgrader);
+        env.events().publish(
+            (Symbol::new(&env, "upgrader_updated"),),
+            (upgrader,),
+        );
+    }
+
+    pub fn get_upgrader(env: Env) -> Address {
+        env.storage()
+            .instance()
+            .get(&DataKey::Upgrader)
+            .or_else(|| env.storage().instance().get(&DataKey::Admin))
+            .unwrap_or_else(|| panic_with_error!(&env, Error::NotInitialized))
+    }
+
+    /// WASM contract upgrade guarded by upgrader role check (#678).
+    pub fn upgrade(env: Env, new_wasm_hash: BytesN<32>) {
+        let upgrader = Self::get_upgrader(env.clone());
+        upgrader.require_auth();
+
+        env.events().publish(
+            (Symbol::new(&env, "contract_upgraded"),),
+            (upgrader, new_wasm_hash.clone()),
+        );
+
+        env.deployer().update_current_contract_wasm(new_wasm_hash);
     }
 
     pub fn propose_admin(env: Env, new_admin: Address) {
@@ -546,6 +615,10 @@ impl StellarHunts {
         env.storage()
             .instance()
             .set(&DataKey::QuestionPerLevel, &amount);
+        env.events().publish(
+            (Symbol::new(&env, "question_per_level_updated"),),
+            (amount,),
+        );
     }
 
     /// Set a question cap for a specific level (issue #467).
@@ -999,16 +1072,22 @@ impl StellarHunts {
 
     pub fn pause(env: Env) {
         require_admin(&env);
+        let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
         env.storage().instance().set(&DataKey::Paused, &true);
-        env.events()
-            .publish((Symbol::new(&env, "paused"),), ());
+        env.events().publish(
+            (Symbol::new(&env, "contract_paused"),),
+            (admin,),
+        );
     }
 
     pub fn unpause(env: Env) {
         require_admin(&env);
+        let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
         env.storage().instance().set(&DataKey::Paused, &false);
-        env.events()
-            .publish((Symbol::new(&env, "unpaused"),), ());
+        env.events().publish(
+            (Symbol::new(&env, "contract_unpaused"),),
+            (admin,),
+        );
     }
 
     pub fn is_paused(env: Env) -> bool {
@@ -1016,6 +1095,185 @@ impl StellarHunts {
             .instance()
             .get(&DataKey::Paused)
             .unwrap_or(false)
+    }
+
+    // -----------------------------------------------------------------
+    // Staking for score multipliers (#675)
+    // -----------------------------------------------------------------
+
+    /// Creates a hunt event with an active time window and a multiplier (in basis points, e.g. 150 = 1.5x).
+    pub fn create_event(
+        env: Env,
+        event_id: u64,
+        start_time: u64,
+        end_time: u64,
+        multiplier_bps: u32,
+    ) {
+        require_admin(&env);
+        if start_time >= end_time || multiplier_bps < 100 {
+            panic_with_error!(&env, Error::EmptyField);
+        }
+        let event = HuntEvent {
+            event_id,
+            start_time,
+            end_time,
+            multiplier_bps,
+            active: true,
+        };
+        env.storage()
+            .persistent()
+            .set(&DataKey::Event(event_id), &event);
+        env.events().publish(
+            (Symbol::new(&env, "event_created"),),
+            (event_id, start_time, end_time, multiplier_bps),
+        );
+    }
+
+    pub fn get_event(env: Env, event_id: u64) -> HuntEvent {
+        env.storage()
+            .persistent()
+            .get(&DataKey::Event(event_id))
+            .ok_or(Error::EventNotFound)
+            .unwrap()
+    }
+
+    /// Stake a level badge NFT to activate a score multiplier for an active event (#675).
+    pub fn stake_badge(env: Env, player: Address, event_id: u64, level: Levels) {
+        if env
+            .storage()
+            .instance()
+            .get(&DataKey::Paused)
+            .unwrap_or(false)
+        {
+            panic_with_error!(&env, Error::ContractPaused);
+        }
+        player.require_auth();
+
+        let event = Self::get_event(env.clone(), event_id);
+        let now = env.ledger().timestamp();
+        if !event.active || now < event.start_time || now > event.end_time {
+            panic_with_error!(&env, Error::EventNotActive);
+        }
+
+        let nft_contract: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::NftContract)
+            .ok_or(Error::MissingNftContract)
+            .unwrap();
+
+        let has_badge = stellar_hunts_nft::StellarHuntsNftClient::new(&env, &nft_contract)
+            .has_level_badge(&player, &level);
+        if !has_badge {
+            panic_with_error!(&env, Error::BadgeNotOwned);
+        }
+
+        let stake_key = DataKey::BadgeStake(player.clone(), event_id, level.clone());
+        if env.storage().persistent().has(&stake_key) {
+            panic_with_error!(&env, Error::AlreadyStaked);
+        }
+
+        let stake = BadgeStake {
+            player: player.clone(),
+            event_id,
+            level: level.clone(),
+            staked_at: now,
+            is_slashed: false,
+        };
+        env.storage().persistent().set(&stake_key, &stake);
+
+        env.events().publish(
+            (Symbol::new(&env, "badge_staked"),),
+            (player, event_id, level),
+        );
+    }
+
+    /// Unstake a badge NFT after or during an active event (#675).
+    pub fn unstake_badge(env: Env, player: Address, event_id: u64, level: Levels) {
+        player.require_auth();
+
+        let stake_key = DataKey::BadgeStake(player.clone(), event_id, level.clone());
+        let stake: BadgeStake = env
+            .storage()
+            .persistent()
+            .get(&stake_key)
+            .ok_or(Error::StakeNotFound)
+            .unwrap();
+
+        if stake.is_slashed {
+            panic_with_error!(&env, Error::StakeSlashed);
+        }
+
+        env.storage().persistent().remove(&stake_key);
+
+        env.events().publish(
+            (Symbol::new(&env, "badge_unstaked"),),
+            (player, event_id, level),
+        );
+    }
+
+    /// Slashing logic for stakes in expired events (#675).
+    pub fn slash_expired_stake(env: Env, player: Address, event_id: u64, level: Levels) {
+        let event = Self::get_event(env.clone(), event_id);
+        let now = env.ledger().timestamp();
+        if now <= event.end_time {
+            panic_with_error!(&env, Error::EventNotActive);
+        }
+
+        let stake_key = DataKey::BadgeStake(player.clone(), event_id, level.clone());
+        let mut stake: BadgeStake = env
+            .storage()
+            .persistent()
+            .get(&stake_key)
+            .ok_or(Error::StakeNotFound)
+            .unwrap();
+
+        if stake.is_slashed {
+            return;
+        }
+
+        stake.is_slashed = true;
+        env.storage().persistent().set(&stake_key, &stake);
+
+        env.events().publish(
+            (Symbol::new(&env, "stake_slashed"),),
+            (player, event_id, level),
+        );
+    }
+
+    /// Returns the active score multiplier in basis points (100 = 1.0x).
+    /// Multiplier applies only within the active event window (#675).
+    pub fn get_player_multiplier(
+        env: Env,
+        player: Address,
+        event_id: u64,
+        level: Levels,
+    ) -> u32 {
+        let event = match env.storage().persistent().get(&DataKey::Event(event_id)) {
+            Some(e) => e,
+            None => return 100,
+        };
+        let now = env.ledger().timestamp();
+        if !event.active || now < event.start_time || now > event.end_time {
+            return 100;
+        }
+
+        let stake_key = DataKey::BadgeStake(player, event_id, level);
+        match env.storage().persistent().get::<DataKey, BadgeStake>(&stake_key) {
+            Some(stake) if !stake.is_slashed => event.multiplier_bps,
+            _ => 100,
+        }
+    }
+
+    /// Inspect a player's badge stake.
+    pub fn get_stake(
+        env: Env,
+        player: Address,
+        event_id: u64,
+        level: Levels,
+    ) -> Option<BadgeStake> {
+        let stake_key = DataKey::BadgeStake(player, event_id, level);
+        env.storage().persistent().get(&stake_key)
     }
 
     pub fn get_schema_version(e: Env) -> u32 {

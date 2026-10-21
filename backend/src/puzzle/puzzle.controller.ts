@@ -111,4 +111,18 @@ export class PuzzleController {
   findActive(@Query('difficulty') difficulty?: string) {
     return this.puzzleService.findActive(difficulty);
   }
+
+  @Get('admin/puzzles/difficulty-suggestions')
+  @ApiOperation({ summary: 'Get puzzle difficulty auto-suggestions based on success rates (admin)' })
+  @ApiResponse({ status: 200, description: 'List of difficulty suggestions and alerts.' })
+  getDifficultySuggestions() {
+    return this.puzzleService.getDifficultySuggestions();
+  }
+
+  @Patch('admin/puzzles/:id/apply-difficulty')
+  @ApiOperation({ summary: 'Apply auto-suggested difficulty to puzzle (admin)' })
+  @ApiResponse({ status: 200, description: 'Puzzle difficulty updated.' })
+  applyDifficulty(@Param('id') id: string, @Req() request: Request) {
+    return this.puzzleService.applySuggestedDifficulty(id, this.actorId(request));
+  }
 }

@@ -195,12 +195,20 @@ impl StellarHuntsNft {
         let admin: Address = env.storage().instance().get(&NftDataKey::Admin).unwrap();
         admin.require_auth();
         env.storage().instance().set(&NftDataKey::Paused, &true);
+        env.events().publish(
+            (Symbol::new(&env, "nft_contract_paused"),),
+            (admin,),
+        );
     }
 
     pub fn unpause(env: Env) {
         let admin: Address = env.storage().instance().get(&NftDataKey::Admin).unwrap();
         admin.require_auth();
         env.storage().instance().set(&NftDataKey::Paused, &false);
+        env.events().publish(
+            (Symbol::new(&env, "nft_contract_unpaused"),),
+            (admin,),
+        );
     }
 
     pub fn is_paused(env: Env) -> bool {
@@ -281,7 +289,11 @@ impl StellarHuntsNft {
 
         env.storage()
             .instance()
-            .set(&NftDataKey::Minters(account), &true);
+            .set(&NftDataKey::Minters(account.clone()), &true);
+        env.events().publish(
+            (Symbol::new(&env, "minter_role_granted"),),
+            (account,),
+        );
     }
 
     pub fn revoke_minter_role(env: Env, account: Address) {
@@ -294,7 +306,11 @@ impl StellarHuntsNft {
 
         env.storage()
             .instance()
-            .remove(&NftDataKey::Minters(account));
+            .remove(&NftDataKey::Minters(account.clone()));
+        env.events().publish(
+            (Symbol::new(&env, "minter_role_revoked"),),
+            (account,),
+        );
     }
 
     pub fn has_minter_role(env: Env, account: Address) -> bool {
