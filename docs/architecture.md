@@ -202,6 +202,10 @@ Primary database: **PostgreSQL** managed through TypeORM with code-first entity 
 
 Key entities: `User`, `Puzzle`, `Category`, `Reward`, `RewardClaim`, `TimeTrial`, `Progress`.
 
+Schema changes are versioned through TypeORM migrations; see
+[Database schema and migrations](database-schema.md) for the core ER
+diagram, migration commands, and the idempotent seed dataset.
+
 Configuration via environment variables:
 
 ```env
