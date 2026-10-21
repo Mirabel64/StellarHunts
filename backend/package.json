@@ -32,7 +32,9 @@
     "audit:entities": "ts-node scripts/audit-entities.ts",
     "audit:modules": "ts-node scripts/audit-modules.ts",
     "bench:mint": "ts-node scripts/bench-mint.ts",
-    "bench:mint:json": "BENCH_JSON=1 ts-node scripts/bench-mint.ts"
+    "bench:mint:json": "BENCH_JSON=1 ts-node scripts/bench-mint.ts",
+    "bench:leaderboard": "ts-node scripts/load-test-leaderboard.ts",
+    "bench:leaderboard:json": "ts-node scripts/load-test-leaderboard.ts --json"
   },
   "dependencies": {
     "@nestjs-modules/ioredis": "^2.0.2",
