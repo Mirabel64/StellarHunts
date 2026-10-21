@@ -45,7 +45,7 @@ import { PuzzleCommentModule } from './puzzle-comment/puzzle-comment.module';
 import { PuzzleDependencyModule } from './puzzle-dependency/puzzle-dependency.module';
 import { PuzzleDraftModule } from './puzzle-draft/puzzle-draft.module';
 import { PuzzleModule } from './puzzle/puzzle.module';
-import { PuzzleReviewModule } from './puzzle-review/puzzle-review/puzzle-review.module';
+import { PuzzleSolutionCheckerModule } from './puzzle-solution-checker/puzzle-solution-checker.module';
 import { PuzzleSubmissionModule } from './puzzle-submission/puzzle-submission.module';
 import { PuzzleTranslationModule } from './puzzle-translation/puzzle-translation.module';
 import { RateLimiterModule } from './rate-limiter/rate-limiter.module';
@@ -139,8 +139,7 @@ import { GlobalExceptionFilter } from './common/exceptions/global-exception.filt
     PuzzleDependencyModule,
     PuzzleDraftModule,
     PuzzleModule,
-    PuzzleReviewModule,
-    AuditLogModule,
+    PuzzleSolutionCheckerModule,
     PuzzleSubmissionModule,
     PuzzleTranslationModule,
     RateLimiterModule,
