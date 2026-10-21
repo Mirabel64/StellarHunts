@@ -1,211 +1,294 @@
-import { Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  Logger,
+  NotFoundException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import * as crypto from 'crypto';
-import { Keypair } from '@stellar/stellar-sdk';
+import { ConfigService } from '@nestjs/config';
+import { Cron, CronExpression } from '@nestjs/schedule';
+import { IsNull, LessThan, Repository } from 'typeorm';
+import { randomBytes } from 'crypto';
+import { User } from '../auth/entities/user.entity';
+import { WalletChallenge } from './entities/wallet-challenge.entity';
 import { Wallet } from './entities/wallet.entity';
-import { ConsumedWalletNonce } from './entities/consumed-nonce.entity';
+import { WalletAuthService } from './wallet-auth.service';
+import {
+  isValidAccountAddress,
+  verifyAccountSignature,
+} from './stellar-account';
 
-const CHALLENGE_DOMAIN_KEY = 'domain';
-const DEFAULT_DOMAIN = 'stellar-hunts.app';
-const DEFAULT_TTL_SECONDS = 300;
+export const DEFAULT_CHALLENGE_DOMAIN = 'stellar-hunts.app';
+export const DEFAULT_CHALLENGE_TTL_SECONDS = 300;
+export const MAX_CHALLENGE_TTL_SECONDS = 900;
+export const MIN_CHALLENGE_TTL_SECONDS = 30;
 
-export interface WalletChallenge {
-  message: string;
+export interface CreatedWalletChallenge {
   nonce: string;
+  message: string;
   expiresAt: Date;
+  domain: string;
 }
 
+/**
+ * Wallet signature authentication.
+ *
+ * The flow is a standard challenge/response:
+ *
+ *   1. `POST /wallet/challenge` stores a server-generated nonce, message,
+ *      domain and expiry.
+ *   2. The wallet signs the exact UTF-8 message and posts the nonce and
+ *      signature back.
+ *   3. The server verifies the ed25519 signature against the account's
+ *      public key, atomically marks the challenge consumed, and issues a
+ *      session token.
+ *
+ * Because the challenge is reconstructed from the stored row (not from
+ * client-supplied text), a caller cannot choose their own nonce, expiry or
+ * domain, and a signature can only ever be used once.
+ */
 @Injectable()
 export class WalletService {
+  private readonly logger = new Logger(WalletService.name);
+
   constructor(
+    @InjectRepository(WalletChallenge)
+    private readonly challengeRepository: Repository<WalletChallenge>,
     @InjectRepository(Wallet)
     private readonly walletRepository: Repository<Wallet>,
-    @InjectRepository(ConsumedWalletNonce)
-    private readonly consumedNonceRepository: Repository<ConsumedWalletNonce>,
+    @InjectRepository(User)
+    private readonly userRepository: Repository<User>,
+    private readonly walletAuthService: WalletAuthService,
+    private readonly configService: ConfigService,
   ) {}
 
-  async linkWallet(address: string): Promise<Wallet> {
-    let wallet = await this.walletRepository.findOne({ where: { address } });
-    if (!wallet) {
-      wallet = this.walletRepository.create({ address });
-      await this.walletRepository.save(wallet);
-    }
-    return wallet;
+  /** Domain challenges are bound to. */
+  get challengeDomain(): string {
+    return (
+      this.configService.get<string>('WALLET_AUTH_DOMAIN') ||
+      DEFAULT_CHALLENGE_DOMAIN
+    );
   }
 
-  async findByAddress(address: string): Promise<Wallet | null> {
-    return this.walletRepository.findOne({ where: { address } });
+  private get challengeTtlSeconds(): number {
+    const configured = Number(
+      this.configService.get<string>('WALLET_CHALLENGE_TTL_SECONDS') ??
+        DEFAULT_CHALLENGE_TTL_SECONDS,
+    );
+    if (!Number.isFinite(configured)) return DEFAULT_CHALLENGE_TTL_SECONDS;
+    return Math.min(
+      MAX_CHALLENGE_TTL_SECONDS,
+      Math.max(MIN_CHALLENGE_TTL_SECONDS, Math.floor(configured)),
+    );
   }
 
   /**
-   * Build a challenge for a wallet to sign. The challenge is bound to the
-   * wallet address, an optional user, a domain, and an expiration time, and
-   * includes a random nonce. The resulting signature cannot be replayed on
-   * another wallet, user, domain, or after expiry.
+   * Issues and persists a challenge for `walletAddress`.
+   *
+   * The address is validated through the Stellar SDK so that only a real
+   * ed25519 account key can start a login. An invalid address is a 400, not
+   * an authentication failure.
    */
-  createChallenge(
+  async createChallenge(
     walletAddress: string,
-    userId?: string,
-    domain: string = DEFAULT_DOMAIN,
-    ttlSeconds: number = DEFAULT_TTL_SECONDS,
-  ): WalletChallenge {
-    const nonce = crypto.randomBytes(32).toString('hex');
-    const expiresAt = new Date(Date.now() + ttlSeconds * 1000);
+    ttlSeconds?: number,
+  ): Promise<CreatedWalletChallenge> {
+    if (!isValidAccountAddress(walletAddress)) {
+      throw new BadRequestException(
+        'walletAddress must be a Stellar account address (G...)',
+      );
+    }
+
+    const ttl = Math.min(
+      MAX_CHALLENGE_TTL_SECONDS,
+      Math.max(
+        MIN_CHALLENGE_TTL_SECONDS,
+        Math.floor(ttlSeconds ?? this.challengeTtlSeconds),
+      ),
+    );
+    const domain = this.challengeDomain;
+    const nonce = randomBytes(32).toString('hex');
+    const expiresAt = new Date(Date.now() + ttl * 1000);
     const message = [
       'stellar-hunts: authenticate',
       `wallet=${walletAddress}`,
       `nonce=${nonce}`,
-      `user=${userId ?? 'none'}`,
-      `${CHALLENGE_DOMAIN_KEY}=${domain}`,
+      `domain=${domain}`,
       `expires=${expiresAt.toISOString()}`,
     ].join('\n');
-    return { message, nonce, expiresAt };
+
+    const challenge = await this.challengeRepository.save(
+      this.challengeRepository.create({
+        nonce,
+        walletAddress,
+        domain,
+        message,
+        expiresAt,
+        consumedAt: null,
+      }),
+    );
+
+    return {
+      nonce: challenge.nonce,
+      message: challenge.message,
+      expiresAt: challenge.expiresAt,
+      domain: challenge.domain,
+    };
   }
 
   /**
-   * Verify a wallet signature with replay protection.
+   * Verifies a challenge response and consumes the nonce.
    *
-   * Accepts the signed challenge message and returns `true` only when:
-   *  - the signature is a valid ed25519 signature over the message bytes made
-   *    by the wallet's public key,
-   *  - the message embeds a nonce that has not been consumed before,
-   *  - the message is bound to the same wallet and (when bound) user,
-   *  - the message is bound to the expected domain,
-   *  - the message has not expired.
-   *
-   * On success the nonce is persisted as consumed so the same signature cannot
-   * be replayed.
+   * Every failure path is a 401 with a deliberately non-specific message
+   * except for `Challenge already used`, which is returned so clients can
+   * tell a replay from a bad signature.
    */
   async verifySignature(
     walletAddress: string,
+    nonce: string,
     signature: string,
-    message: string,
-    opts?: {
-      userId?: string;
-      domain?: string;
-    },
-  ): Promise<{ valid: boolean; error?: string }> {
-    const expectedDomain = opts?.domain ?? DEFAULT_DOMAIN;
+  ): Promise<WalletChallenge> {
+    const challenge = await this.challengeRepository.findOne({
+      where: { nonce },
+    });
 
-    const fields = this.parseChallenge(message);
-    if (!fields) {
-      return { valid: false, error: 'Malformed challenge message' };
+    if (!challenge || challenge.walletAddress !== walletAddress) {
+      throw new UnauthorizedException('Unknown wallet challenge');
+    }
+    if (challenge.consumedAt) {
+      throw new UnauthorizedException('Challenge already used');
+    }
+    if (challenge.expiresAt.getTime() <= Date.now()) {
+      throw new UnauthorizedException('Challenge has expired');
+    }
+    if (challenge.domain !== this.challengeDomain) {
+      throw new UnauthorizedException('Challenge bound to an unexpected domain');
     }
 
-    if (fields.wallet !== walletAddress) {
-      return {
-        valid: false,
-        error: 'Message not bound to this wallet',
-      };
+    const validSignature = this.checkSignature(
+      walletAddress,
+      challenge.message,
+      signature,
+    );
+    if (!validSignature) {
+      throw new UnauthorizedException('Invalid wallet signature');
     }
 
-    if (fields.domain !== expectedDomain) {
-      return {
-        valid: false,
-        error: 'Message bound to an unexpected domain',
-      };
+    // Single-use guarantee. The compare-and-set on `consumedAt` makes this
+    // safe under concurrency: of two simultaneous requests carrying the same
+    // nonce, exactly one updates a row and the other sees `affected === 0`.
+    const consumed = await this.challengeRepository.update(
+      { id: challenge.id, consumedAt: IsNull() },
+      { consumedAt: new Date() },
+    );
+
+    if (!consumed.affected) {
+      throw new UnauthorizedException('Challenge already used');
     }
 
-    const expires = Date.parse(fields.expires);
-    if (Number.isNaN(expires)) {
-      return { valid: false, error: 'Challenge has no expiration' };
-    }
-    if (expires <= Date.now()) {
-      return { valid: false, error: 'Challenge has expired' };
-    }
-
-    if (opts?.userId) {
-      if (fields.user !== opts.userId) {
-        return { valid: false, error: 'Message not bound to this user' };
-      }
-    }
-
-    // Replay protection: reject if the nonce was already consumed.
-    if (fields.nonce) {
-      const consumed = await this.consumedNonceRepository.findOne({
-        where: { nonce: fields.nonce },
-      });
-      if (consumed) {
-        return { valid: false, error: 'Challenge already used (replay)' };
-      }
-    } else {
-      return { valid: false, error: 'Challenge has no nonce' };
-    }
-
-    // Cryptographic verification: ed25519 signature over the message bytes.
-    let valid = false;
-    try {
-      const messageBytes = Buffer.from(message, 'utf8');
-      const signatureBytes = Buffer.from(signature, 'base64');
-      const keypair = Keypair.fromPublicKey(walletAddress);
-      valid = keypair.verify(messageBytes, signatureBytes);
-    } catch {
-      valid = false;
-    }
-
-    if (!valid) {
-      return { valid: false, error: 'Invalid signature' };
-    }
-
-    // Mark the nonce as consumed to prevent replays. The unique constraint on
-    // `nonce` is the authoritative guard: a concurrent duplicate reject is
-    // treated the same as a replayed signature.
-    try {
-      await this.consumedNonceRepository.save(
-        this.consumedNonceRepository.create({
-          nonce: fields.nonce,
-          walletAddress,
-          userId: opts?.userId,
-          domain: expectedDomain,
-          consumedAt: new Date(),
-        }),
-      );
-    } catch (err: unknown) {
-      const isDuplicate =
-        (err as { code?: string | number })?.code === 'ER_DUP_ENTRY' ||
-        (err as { code?: string | number })?.code === 'SQLITE_CONSTRAINT' ||
-        (err as { code?: string | number })?.code === '23505';
-      if (isDuplicate) {
-        return { valid: false, error: 'Challenge already used (replay)' };
-      }
-      throw err;
-    }
-
-    return { valid: true };
+    await this.recordWallet(walletAddress);
+    return challenge;
   }
 
-  private parseChallenge(
+  /** Links a proven wallet address to an existing account. */
+  async linkWalletToAccount(
+    userId: string,
+    walletAddress: string,
+    nonce: string,
+    signature: string,
+  ): Promise<User> {
+    await this.verifySignature(walletAddress, nonce, signature);
+
+    const owner = await this.userRepository.findOne({
+      where: { walletAddress },
+    });
+    if (owner && owner.id !== userId) {
+      throw new ConflictException(
+        'Wallet already linked to another account',
+      );
+    }
+
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    if (user.walletAddress !== walletAddress) {
+      user.walletAddress = walletAddress;
+      await this.userRepository.save(user);
+    }
+
+    return user;
+  }
+
+  async findUserByWallet(walletAddress: string): Promise<User | null> {
+    return this.userRepository.findOne({ where: { walletAddress } });
+  }
+
+  /** Wallet-only session token for an address that is not linked to an account. */
+  async issueWalletSession(walletAddress: string) {
+    return this.walletAuthService.issueSession(walletAddress);
+  }
+
+  /**
+   * Removes challenges that expired more than a day ago. A challenge is only
+   * useful while it is unconsumed and unexpired, so keeping the full history
+   * forever would grow the table without benefit.
+   */
+  @Cron(CronExpression.EVERY_DAY_AT_3AM)
+  async pruneExpiredChallenges(): Promise<number> {
+    const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    try {
+      const result = await this.challengeRepository.delete({
+        expiresAt: LessThan(cutoff),
+      });
+      return result.affected ?? 0;
+    } catch (error) {
+      this.logger.warn(
+        `wallet_challenge_prune_failed error=${
+          error instanceof Error ? error.name : typeof error
+        }`,
+      );
+      return 0;
+    }
+  }
+
+  private async recordWallet(walletAddress: string): Promise<void> {
+    // The registry is a convenience for lookups and auditing; a failure here
+    // must not turn a successfully verified login into a 500.
+    try {
+      const existing = await this.walletRepository.findOne({
+        where: { address: walletAddress },
+      });
+      if (!existing) {
+        await this.walletRepository.save(
+          this.walletRepository.create({ address: walletAddress }),
+        );
+      }
+    } catch (error) {
+      this.logger.warn(
+        `wallet_registry_write_failed error=${
+          error instanceof Error ? error.name : typeof error
+        }`,
+      );
+    }
+  }
+
+  private checkSignature(
+    walletAddress: string,
     message: string,
-  ): {
-    wallet?: string;
-    nonce?: string;
-    user?: string;
-    domain?: string;
-    expires?: string;
-  } | null {
-    if (!message || typeof message !== 'string') {
-      return null;
+    signature: string,
+  ): boolean {
+    try {
+      return verifyAccountSignature(
+        walletAddress,
+        Buffer.from(message, 'utf8'),
+        Buffer.from(signature, 'base64'),
+      );
+    } catch {
+      return false;
     }
-    const lines = message.split('\n');
-    if (!lines[0]?.startsWith('stellar-hunts: authenticate')) {
-      return null;
-    }
-    const out: Record<string, string> = {};
-    for (const line of lines.slice(1)) {
-      const idx = line.indexOf('=');
-      if (idx === -1) continue;
-      out[line.slice(0, idx)] = line.slice(idx + 1);
-    }
-    if (!out.wallet || !out.nonce || !out.domain || !out.expires) {
-      return null;
-    }
-    return {
-      wallet: out.wallet,
-      nonce: out.nonce,
-      user: out.user ?? 'none',
-      domain: out.domain,
-      expires: out.expires,
-    };
   }
 }

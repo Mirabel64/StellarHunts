@@ -23,6 +23,7 @@ import { AuthModule } from './auth/auth.module';
 import { CacheModule } from './cache/cache.module';
 import { ContentModule } from './content/content.module';
 import { ContentRatingModule } from './content-rating/content-rating.module';
+import { DataExportModule } from './data-export/data-export.module';
 import { DailyRewardModule } from './daily-reward/daily-reward.module';
 import { FeedbackModule } from './feedback/feedback.module';
 import { GeoStatsModule } from './geostat/geostat.module';
@@ -61,6 +62,7 @@ import { UserModule } from './user/user.module';
 import { UserRankingModule } from './user-ranking/user-ranking.module';
 import { UserReactionModule } from './user-reaction/user-reaction.module';
 import { UserReportCardModule } from './user-report-card/user-report-card.module';
+import { WalletModule } from './wallet/wallet.module';
 import { GlobalExceptionFilter } from './common/exceptions/global-exception.filter';
 
 @Module({
@@ -117,6 +119,7 @@ import { GlobalExceptionFilter } from './common/exceptions/global-exception.filt
     CacheModule,
     ContentModule,
     ContentRatingModule,
+    DataExportModule,
     DailyRewardModule,
     FeedbackModule,
     GeoStatsModule,
@@ -154,6 +157,7 @@ import { GlobalExceptionFilter } from './common/exceptions/global-exception.filt
     UserRankingModule,
     UserReactionModule,
     UserReportCardModule,
+    WalletModule,
     OutboxModule,
   ],
   controllers: [AppController],

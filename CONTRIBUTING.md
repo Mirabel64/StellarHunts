@@ -356,6 +356,47 @@ Before submitting, confirm:
 
 A PR template is available at `.github/PULL_REQUEST_TEMPLATE.md` and will auto-populate when you open a new pull request.
 
+## Releases and Versioning
+
+StellarHunts follows [Semantic Versioning](https://semver.org/): **MAJOR** for
+breaking changes, **MINOR** for backwards-compatible features, and **PATCH**
+for backwards-compatible fixes. The version lives in the root,
+`backend/`, and `frontend/` `package.json` files and must be identical in all
+three.
+
+Release notes are generated from [Conventional Commits](https://www.conventionalcommits.org/).
+Write commit subjects as `type(scope): description` (`feat`, `fix`, `perf`,
+`refactor`, `docs`, `test`, `build`, `ci`, `style`, `chore`) so the changelog
+can group them; a `!` after the type marks a breaking change.
+
+### Preparing a release
+
+```bash
+# From a clean main branch, choose the semver bump
+npm run release:prepare -- patch   # or minor / major / x.y.z
+
+# Review the version bump and the generated CHANGELOG.md section, then:
+git add package.json backend/package.json frontend/package.json package-lock.json \
+        backend/package-lock.json frontend/package-lock.json CHANGELOG.md
+git commit -m "chore(release): vX.Y.Z"
+git tag -a vX.Y.Z -m "Release vX.Y.Z"
+git push origin main --follow-tags
+```
+
+`npm run release:prepare` refuses to run on a dirty tree, checks that all
+workspace versions agree, and writes the changelog section for the commits
+since the previous tag. You can preview it with `--dry-run`, or regenerate a
+section directly with `node scripts/changelog.mjs --version X.Y.Z --write`.
+
+The pushed tag triggers [`.github/workflows/release.yml`](.github/workflows/release.yml),
+which verifies that the tag matches the workspace versions, builds the
+frontend, backend, and Soroban artifacts, and publishes a GitHub Release whose
+notes come from the same generator. The manual **Release** workflow trigger is
+only for re-running a release; it does not move the tag.
+
+See [RELEASE.md](RELEASE.md) for the full checklist, including artifact
+retention and contract-admin rotation.
+
 ## Smart Contract Contributions
 
 For contributions to the `onchain/` directory:

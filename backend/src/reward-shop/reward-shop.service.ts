@@ -5,7 +5,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { v4 as uuidv4 } from 'uuid';
-import { economyConfig } from '../../config/economy.config';
+import { economyConfig } from '../../config/economy';
 
 export interface ShopItem {
   id: string;

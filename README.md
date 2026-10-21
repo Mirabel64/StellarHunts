@@ -39,7 +39,17 @@ The root npm workspace installs frontend and backend dependencies. Create a Post
 Copy-Item backend/.env.example backend/.env
 ```
 
+The minimum local configuration is:
+
+```bash
+STELLAR_MODE=mock
+NODE_ENV=development
+PORT=3001
+```
+
 Edit `backend/.env` with your local PostgreSQL host, username, password, and database name. For a local UI/API run without deployed contracts, set `STELLAR_MODE=mock`, `NODE_ENV=development`, and `PORT=3001`. Keep `DATABASE_SYNC=true` for a disposable development database only; use migrations and disable synchronization for persistent or production data. See [backend configuration](backend/README.md#getting-started) for the full environment reference.
+
+The schema default for `STELLAR_MODE` is **live**, so local development has to opt in to `mock` explicitly. A deployment that omits the variable without Soroban credentials fails at startup, naming the missing keys, rather than booting and then handing out NFT badges that were never minted on-chain.
 
 ### Run
 

@@ -14,7 +14,6 @@ import { ConfigService } from '@nestjs/config';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 
-import { AppModule } from '../src/app.module';
 import { buildOpenApiDocument } from '../src/swagger';
 import { annotateAuthFromGuards, type ModuleLike } from '../src/openapi/annotate-auth';
 import type { OpenApiDocumentLike } from '../src/openapi/render-markdown';
@@ -37,7 +36,13 @@ function applyGenerationDefaults(): void {
 }
 
 async function main(): Promise<void> {
+  // The environment must be populated *before* `AppModule` is imported:
+  // `ConfigModule.forRoot()` validates the environment when the module
+  // decorator is evaluated, which happens during the import, not when the
+  // application is created. A static import here reads the environment too
+  // early and fails validation in CI, where none of these variables are set.
   applyGenerationDefaults();
+  const { AppModule } = await import('../src/app.module');
 
   const app = await NestFactory.create(AppModule, { logger: false });
   try {
