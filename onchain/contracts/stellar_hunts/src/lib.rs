@@ -339,6 +339,10 @@ pub enum Error {
     InputTooLarge = 18,
     CapWouldMakeLevelUnreachable = 19,
     CapBelowExistingIndex = 20,
+    HashMismatch = 21,
+    AlreadyCompleted = 22,
+    RewardTransferFailed = 23,
+    MissingRewardToken = 24,
 }
 
 // ---------------------------------------------------------------------
@@ -534,6 +538,62 @@ impl StellarHunts {
             .publish((Symbol::new(&env, "question_added"),), (question_id, level));
     }
 
+    /// Adds a question with a precomputed solution hash (issue #683).
+    pub fn add_question_with_hash(
+        env: Env,
+        level: Levels,
+        question: Bytes,
+        hashed_answer: BytesN<32>,
+        hint: Bytes,
+    ) -> u64 {
+        require_admin(&env);
+
+        if question.is_empty() || hint.is_empty() {
+            panic_with_error!(&env, Error::EmptyField);
+        }
+        if question.len() > MAX_QUESTION_LEN || hint.len() > MAX_HINT_LEN {
+            panic_with_error!(&env, Error::InputTooLarge);
+        }
+
+        let count: u64 = env
+            .storage()
+            .instance()
+            .get(&DataKey::QuestionCount)
+            .unwrap_or(0u64);
+        let question_id = count
+            .checked_add(1)
+            .unwrap_or_else(|| panic_with_error!(&env, Error::ArithmeticOverflow));
+        env.storage()
+            .instance()
+            .set(&DataKey::QuestionCount, &question_id);
+
+        let q = Question {
+            question_id,
+            question: question.clone(),
+            hashed_answer,
+            level: level.clone(),
+            hint: hint.clone(),
+            version: CURRENT_SCHEMA_VERSION,
+        };
+        env.storage()
+            .persistent()
+            .set(&DataKey::Question(question_id), &q);
+
+        let per_level: u32 = get_cap_for_level(&env, &level);
+        let idx = index_count(&env, &level);
+
+        if idx >= per_level {
+            panic_with_error!(&env, Error::QuestionPerLevelLimit);
+        }
+
+        index_append(&env, &level, question_id).unwrap_or_else(|e| panic_with_error!(&env, e));
+
+        env.events()
+            .publish((Symbol::new(&env, "question_added"),), (question_id, level));
+
+        question_id
+    }
+
     pub fn update_question(
         env: Env,
         question_id: u64,
@@ -684,6 +744,48 @@ impl StellarHunts {
         );
     }
 
+    /// Sets the reward token contract address for reward payouts (issue #680).
+    pub fn set_reward_token(env: Env, token: Address) {
+        require_admin(&env);
+        env.storage().instance().set(&DataKey::RewardToken, &token);
+        env.events().publish(
+            (Symbol::new(&env, "reward_token_updated"),),
+            (token,),
+        );
+    }
+
+    /// Gets the configured reward token contract address (issue #680).
+    pub fn get_reward_token(env: Env) -> Option<Address> {
+        env.storage().instance().get(&DataKey::RewardToken)
+    }
+
+    /// Sets the default reward token payout amount for puzzle completions (issue #680).
+    pub fn set_default_reward_amount(env: Env, amount: i128) {
+        require_admin(&env);
+        if amount < 0 {
+            panic_with_error!(&env, Error::InvalidInput);
+        }
+        env.storage().instance().set(&DataKey::DefaultRewardAmount, &amount);
+    }
+
+    /// Sets a puzzle-specific reward token payout amount (issue #680).
+    pub fn set_puzzle_reward_amount(env: Env, puzzle_id: u64, amount: i128) {
+        require_admin(&env);
+        if amount < 0 {
+            panic_with_error!(&env, Error::InvalidInput);
+        }
+        env.storage().instance().set(&DataKey::PuzzleRewardAmount(puzzle_id), &amount);
+    }
+
+    /// Gets the reward amount for a given puzzle (issue #680).
+    pub fn get_puzzle_reward_amount(env: Env, puzzle_id: u64) -> i128 {
+        env.storage()
+            .instance()
+            .get(&DataKey::PuzzleRewardAmount(puzzle_id))
+            .or_else(|| env.storage().instance().get(&DataKey::DefaultRewardAmount))
+            .unwrap_or(0i128)
+    }
+
     // -----------------------------------------------------------------
     // Player actions
     // -----------------------------------------------------------------
@@ -765,8 +867,15 @@ impl StellarHunts {
             .checked_add(1)
             .unwrap_or_else(|| panic_with_error!(&env, Error::ArithmeticOverflow));
 
-        let hashed: BytesN<32> = env.crypto().sha256(&answer).into();
-        let is_correct = hashed == question.hashed_answer;
+        let is_correct = if answer.len() == 32 {
+            let mut arr = [0u8; 32];
+            answer.copy_into_slice(&mut arr);
+            let submitted_hash = BytesN::from_array(&env, &arr);
+            submitted_hash == question.hashed_answer
+        } else {
+            let hashed: BytesN<32> = env.crypto().sha256(&answer).into();
+            hashed == question.hashed_answer
+        };
 
         if is_correct {
             lp.last_question_index = lp
@@ -809,6 +918,190 @@ impl StellarHunts {
             ),
         );
         is_correct
+    }
+
+    /// Records puzzle completion on-chain and validates solution hash (issues #670, #683, #680).
+    ///
+    /// Validates submitted solution by comparing hash with stored hashed_answer.
+    /// Rejects hash mismatch with Error::HashMismatch.
+    /// Rejects duplicate completions with Error::AlreadyCompleted.
+    /// Emits `puzzle_completed` event with (player, puzzle_id).
+    /// Integrates reward token payout if reward token is configured.
+    pub fn complete_puzzle(
+        env: Env,
+        caller: Address,
+        puzzle_id: u64,
+        solution_hash: BytesN<32>,
+    ) -> bool {
+        if env
+            .storage()
+            .instance()
+            .get(&DataKey::Paused)
+            .unwrap_or(false)
+        {
+            panic_with_error!(&env, Error::ContractPaused);
+        }
+        caller.require_auth();
+
+        if puzzle_id == 0 {
+            panic_with_error!(&env, Error::QuestionNotFound);
+        }
+
+        let key = DataKey::Question(puzzle_id);
+        let question: Question = env
+            .storage()
+            .persistent()
+            .get(&key)
+            .unwrap_or_else(|| panic_with_error!(&env, Error::QuestionNotFound));
+
+        if env
+            .storage()
+            .persistent()
+            .has(&DataKey::RetiredQuestion(puzzle_id))
+        {
+            panic_with_error!(&env, Error::QuestionRetired);
+        }
+
+        // Verify submitted solution by comparing hashes (#683)
+        if solution_hash != question.hashed_answer {
+            panic_with_error!(&env, Error::HashMismatch);
+        }
+
+        let completion_key = DataKey::CompletedPuzzle(caller.clone(), puzzle_id);
+        if env.storage().persistent().has(&completion_key) {
+            panic_with_error!(&env, Error::AlreadyCompleted);
+        }
+
+        // Record puzzle completion on-chain (#670)
+        env.storage().persistent().set(&completion_key, &true);
+
+        // Cross-contract call to token contract for reward payouts (#680)
+        Self::try_payout_reward(&env, &caller, puzzle_id);
+
+        // Emit event with player address and puzzle id (#670)
+        env.events().publish(
+            (Symbol::new(&env, "puzzle_completed"),),
+            (caller, puzzle_id),
+        );
+
+        true
+    }
+
+    /// Verifies if a solution hash matches a question's stored hash (issue #683).
+    pub fn verify_solution_hash(env: Env, puzzle_id: u64, solution_hash: BytesN<32>) -> bool {
+        if puzzle_id == 0 {
+            panic_with_error!(&env, Error::QuestionNotFound);
+        }
+        let key = DataKey::Question(puzzle_id);
+        let question: Question = env
+            .storage()
+            .persistent()
+            .get(&key)
+            .unwrap_or_else(|| panic_with_error!(&env, Error::QuestionNotFound));
+        question.hashed_answer == solution_hash
+    }
+
+    /// Checks if a player has recorded completion for a puzzle (issue #670).
+    pub fn is_puzzle_completed(env: Env, player: Address, puzzle_id: u64) -> bool {
+        env.storage()
+            .persistent()
+            .has(&DataKey::CompletedPuzzle(player, puzzle_id))
+    }
+
+    /// Allows claiming reward payout for an already completed puzzle (issue #680).
+    pub fn claim_puzzle_reward(env: Env, caller: Address, puzzle_id: u64) {
+        if env
+            .storage()
+            .instance()
+            .get(&DataKey::Paused)
+            .unwrap_or(false)
+        {
+            panic_with_error!(&env, Error::ContractPaused);
+        }
+        caller.require_auth();
+
+        if !Self::is_puzzle_completed(env.clone(), caller.clone(), puzzle_id) {
+            panic_with_error!(&env, Error::QuestionNotFound);
+        }
+
+        Self::try_payout_reward(&env, &caller, puzzle_id);
+    }
+
+    /// Claims an NFT badge reward for a completed puzzle (issue #671).
+    pub fn claim_puzzle_nft(
+        env: Env,
+        caller: Address,
+        puzzle_id: u64,
+        puzzle_name: soroban_sdk::String,
+        difficulty: soroban_sdk::String,
+    ) {
+        if env
+            .storage()
+            .instance()
+            .get(&DataKey::Paused)
+            .unwrap_or(false)
+        {
+            panic_with_error!(&env, Error::ContractPaused);
+        }
+        caller.require_auth();
+
+        if !Self::is_puzzle_completed(env.clone(), caller.clone(), puzzle_id) {
+            panic_with_error!(&env, Error::QuestionNotFound);
+        }
+
+        let nft_contract: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::NftContract)
+            .ok_or(Error::MissingNftContract)
+            .unwrap();
+
+        stellar_hunts_nft::StellarHuntsNftClient::new(&env, &nft_contract).mint_puzzle_reward_nft(
+            &env.current_contract_address(),
+            &caller,
+            &puzzle_id,
+            &puzzle_name,
+            &difficulty,
+        );
+
+        env.events().publish(
+            (Symbol::new(&env, "puzzle_nft_claimed"),),
+            (caller, puzzle_id),
+        );
+    }
+
+    /// Helper for cross-contract call to token contract for reward payouts (issue #680).
+    fn try_payout_reward(env: &Env, recipient: &Address, puzzle_id: u64) {
+        if let Some(token_address) = env
+            .storage()
+            .instance()
+            .get::<DataKey, Address>(&DataKey::RewardToken)
+        {
+            let amount: i128 = env
+                .storage()
+                .instance()
+                .get(&DataKey::PuzzleRewardAmount(puzzle_id))
+                .or_else(|| env.storage().instance().get(&DataKey::DefaultRewardAmount))
+                .unwrap_or(0i128);
+
+            if amount > 0 {
+                let token_client = soroban_sdk::token::Client::new(env, &token_address);
+                let contract_address = env.current_contract_address();
+                let transfer_result =
+                    token_client.try_transfer(&contract_address, recipient, &amount);
+                match transfer_result {
+                    Ok(Ok(())) => {
+                        env.events().publish(
+                            (Symbol::new(env, "reward_paid"),),
+                            (recipient.clone(), puzzle_id, amount),
+                        );
+                    }
+                    _ => {
+                        panic_with_error!(env, Error::RewardTransferFailed);
+                    }
+                }
+            }
+        }
     }
 
     pub fn request_hint(env: Env, caller: Address, question_id: u64) -> Bytes {
