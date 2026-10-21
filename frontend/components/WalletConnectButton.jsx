@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import LoadingSpinner from "@/components/ui/LoadingSpinner";
+import NetworkMismatchBanner from "@/components/NetworkMismatchBanner";
 import { useWalletConnection, WALLET_STATUS } from "@/hooks/useWalletConnection";
 
 /**
@@ -33,10 +34,16 @@ export default function WalletConnectButton({ className }) {
   const {
     status,
     address,
+    network,
+    expectedNetwork,
+    unsupportedNetwork,
+    switchSupported,
+    switchNetwork,
     error,
     isExtensionInstalled,
     connect,
     disconnect,
+    refresh,
   } = useWalletConnection();
 
   const isConnecting = status === WALLET_STATUS.CONNECTING;
@@ -83,6 +90,18 @@ export default function WalletConnectButton({ className }) {
             "Connect Wallet"
           )}
         </Button>
+      )}
+
+      {isConnected && unsupportedNetwork && (
+        <div className="mt-3 w-full">
+          <NetworkMismatchBanner
+            currentNetwork={network}
+            expectedNetwork={expectedNetwork}
+            canSwitch={switchSupported}
+            onSwitch={switchNetwork}
+            onRetry={refresh}
+          />
+        </div>
       )}
 
       {error && (

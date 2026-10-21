@@ -8,6 +8,7 @@ import {
   getNetwork,
 } from "@stellar/freighter-api";
 import { Networks } from "@stellar/stellar-sdk";
+import { findNetworkSwitcher, getNetworkName } from "@/lib/network";
 
 /**
  * The Stellar network the app expects to run on for wallet operations.
@@ -60,7 +61,10 @@ function detectExtension() {
  *   @prop {boolean} isExtensionInstalled
  *   @prop {string|null} address       – current Stellar public key (G...)
  *   @prop {string|null} network       – current network passphrase
+ *   @prop {string}  expectedNetwork   – network passphrase the app requires
  *   @prop {boolean} unsupportedNetwork– true when on an unexpected network
+ *   @prop {boolean} switchSupported   – wallet exposes a network-switch API
+ *   @prop {Function} switchNetwork    – attempt a one-click network switch
  *   @prop {string|null} error         – last lifecycle error message
  *   @prop {Function} connect          – request access + populate state
  *   @prop {Function} refresh          – re-read wallet state
@@ -75,6 +79,7 @@ export function useWalletConnection(opts = {}) {
   const [address, setAddress] = useState(null);
   const [network, setNetwork] = useState(null);
   const [unsupportedNetwork, setUnsupportedNetwork] = useState(false);
+  const [switchSupported, setSwitchSupported] = useState(false);
   const [error, setError] = useState(null);
 
   const lastAddressRef = useRef(null);
@@ -128,6 +133,31 @@ export function useWalletConnection(opts = {}) {
   }, []);
 
   /**
+   * Attempt a one-click network switch when the wallet exposes a switching
+   * API. Returns `{ supported, switched }` so the UI can fall back to manual
+   * instructions instead of pretending the switch happened.
+   */
+  const switchNetwork = useCallback(async () => {
+    const switcher = findNetworkSwitcher();
+    if (!switcher) {
+      return { supported: false, switched: false };
+    }
+
+    setError(null);
+    try {
+      await switcher.call(getNetworkName(EXPECTED_NETWORK));
+      await refresh();
+      return { supported: true, switched: true };
+    } catch (e) {
+      setError(
+        e?.message ||
+          "Could not switch networks automatically. Please switch manually in Freighter."
+      );
+      return { supported: true, switched: false, error: e };
+    }
+  }, [refresh]);
+
+  /**
    * Request access from Freighter (prompts the user if not yet approved).
    * Maps a user rejection / missing extension to a friendly state.
    */
@@ -179,6 +209,7 @@ export function useWalletConnection(opts = {}) {
   // Initial load + account/network listeners (#290).
   useEffect(() => {
     destroyedRef.current = false;
+    setSwitchSupported(Boolean(findNetworkSwitcher()));
     refresh();
 
     // Poll periodically to detect disconnect / unsupported network (Freighter
@@ -229,7 +260,10 @@ export function useWalletConnection(opts = {}) {
     isExtensionInstalled,
     address,
     network,
+    expectedNetwork: EXPECTED_NETWORK,
     unsupportedNetwork,
+    switchSupported,
+    switchNetwork,
     error,
     connect,
     refresh,

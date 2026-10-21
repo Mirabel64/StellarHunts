@@ -23,6 +23,7 @@ import {
   validatePuzzleAnswer,
 } from "@/lib/puzzle-answer";
 import { ChainErrorBoundary } from "@/components/ChainErrorBoundary";
+import NetworkMismatchBanner from "@/components/NetworkMismatchBanner";
 import {
   CheckCircle2,
   XCircle,
@@ -184,11 +185,14 @@ const PuzzleComponent = ({
     lastHint,
     walletConnected,
     walletAddress,
+    walletNetwork,
+    expectedNetwork,
     isExtensionInstalled,
     unsupportedNetwork,
+    switchSupported,
+    switchNetwork,
     walletError,
     connectWallet,
-    disconnectWallet,
     submitAnswer,
     requestHint,
     clearFeedback,
@@ -238,6 +242,13 @@ const PuzzleComponent = ({
       e?.preventDefault();
       if (submitLock.current || submitting) return;
 
+      if (unsupportedNetwork) {
+        setAnswerError(
+          "Switch your wallet to the network required by StellarHunts before submitting.",
+        );
+        return;
+      }
+
       const validationError = validatePuzzleAnswer(answer, puzzle);
       if (validationError) {
         setAnswerError(validationError);
@@ -278,7 +289,16 @@ const PuzzleComponent = ({
         submitLock.current = false;
       }
     },
-    [answer, attemptHistory, onCorrectAnswer, puzzle, qId, submitAnswer, submitting]
+    [
+      answer,
+      attemptHistory,
+      onCorrectAnswer,
+      puzzle,
+      qId,
+      submitAnswer,
+      submitting,
+      unsupportedNetwork,
+    ]
   );
 
   const handleHintToggle = useCallback(async () => {
@@ -404,6 +424,16 @@ const PuzzleComponent = ({
           </p>
         </div>
 
+        {walletConnected && unsupportedNetwork && (
+          <NetworkMismatchBanner
+            currentNetwork={walletNetwork}
+            expectedNetwork={expectedNetwork}
+            canSwitch={switchSupported}
+            onSwitch={switchNetwork}
+            onRetry={checkWallet}
+          />
+        )}
+
         {/* ── Input & Submit ───────────────────────────────── */}
         <form onSubmit={handleSubmit} className="space-y-3">
           <div className="relative">
@@ -415,7 +445,7 @@ const PuzzleComponent = ({
                 id="puzzle-answer"
                 value={answer}
                 onChange={handleAnswerChange}
-                disabled={submitting || isCorrect}
+                disabled={submitting || isCorrect || unsupportedNetwork}
                 aria-invalid={Boolean(answerError)}
                 aria-describedby={answerError ? "puzzle-answer-error" : undefined}
                 className="h-12 w-full rounded-md border border-white/10 bg-[#201d42] px-3 text-white focus:border-purple-400/50 focus:outline-none focus:ring-2 focus:ring-purple-400/30 disabled:opacity-50"
@@ -433,7 +463,7 @@ const PuzzleComponent = ({
                 placeholder="Enter your code answer…"
                 value={answer}
                 onChange={handleAnswerChange}
-                disabled={submitting || isCorrect}
+                disabled={submitting || isCorrect || unsupportedNetwork}
                 maxLength={4096}
                 aria-invalid={Boolean(answerError)}
                 aria-describedby={answerError ? "puzzle-answer-error" : undefined}
@@ -447,7 +477,7 @@ const PuzzleComponent = ({
                 placeholder="Enter your answer…"
                 value={answer}
                 onChange={handleAnswerChange}
-                disabled={submitting || isCorrect}
+                disabled={submitting || isCorrect || unsupportedNetwork}
                 maxLength={4096}
                 aria-invalid={Boolean(answerError)}
                 aria-describedby={answerError ? "puzzle-answer-error" : undefined}
@@ -473,7 +503,7 @@ const PuzzleComponent = ({
           <div className="flex flex-col gap-2 sm:flex-row">
             <Button
               type="submit"
-              disabled={submitting || isCorrect}
+              disabled={submitting || isCorrect || unsupportedNetwork}
               className="group relative flex-1 overflow-hidden bg-gradient-to-r from-purple-500 to-pink-500 py-6 text-base font-semibold shadow-lg shadow-purple-500/25 transition-all duration-300 hover:from-purple-600 hover:to-pink-600 hover:shadow-purple-500/40 disabled:opacity-40"
             >
               <span className="flex items-center justify-center gap-2">
@@ -629,23 +659,6 @@ const PuzzleComponent = ({
               className="mt-3 rounded-lg bg-amber-400 px-4 py-2 text-sm font-semibold text-black transition hover:bg-amber-300 disabled:opacity-50"
             >
               Connect Wallet
-            </button>
-          </div>
-        )}
-
-        {walletConnected && unsupportedNetwork && (
-          <div
-            role="alert"
-            className="mt-4 rounded-xl border border-amber-400/40 bg-amber-400/10 p-3 text-sm text-amber-200"
-          >
-            Unsupported network detected. Switch your Freighter network to match
-            the app, then disconnect and reconnect below.
-            <button
-              type="button"
-              onClick={() => disconnectWallet()}
-              className="mt-2 block text-left text-xs underline"
-            >
-              Disconnect
             </button>
           </div>
         )}
