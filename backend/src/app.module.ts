@@ -24,6 +24,7 @@ import { NFTClaimModule } from './nft-claim/nft-claim.module';
 import { ProgressModule } from './progress/progress.module';
 import { PuzzleDependencyModule } from './puzzle-dependency/puzzle-dependency.module';
 import { PuzzleModule } from './puzzle/puzzle.module';
+import { PuzzleSolutionCheckerModule } from './puzzle-solution-checker/puzzle-solution-checker.module';
 import { PuzzleSubmissionModule } from './puzzle-submission/puzzle-submission.module';
 import { PuzzleTranslationModule } from './puzzle-translation/puzzle-translation.module';
 import { ReportsModule } from './reports/reports.module';
@@ -68,6 +69,7 @@ import { UserReportCardModule } from './user-report-card/user-report-card.module
     ProgressModule,
     PuzzleDependencyModule,
     PuzzleModule,
+    PuzzleSolutionCheckerModule,
     PuzzleSubmissionModule,
     PuzzleTranslationModule,
     ReportsModule,
