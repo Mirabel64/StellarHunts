@@ -42,7 +42,7 @@ const HowItWorks = () => {
       <style>
         {`
           @keyframes fadeInUp {
-            from { 
+            from {
               opacity: 0;
               transform: translateY(20px);
             }

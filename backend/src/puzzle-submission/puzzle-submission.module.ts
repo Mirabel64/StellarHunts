@@ -7,7 +7,12 @@ import { PuzzleSubmissionController } from './puzzle-submission.controller';
 import { Puzzle } from '../puzzle/puzzle.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([PuzzleSubmission]), RateLimiterModule],
+  imports: [
+    // PuzzleSubmissionService grades against the server-side puzzle record,
+    // so the Puzzle repository must be available in this module's context.
+    TypeOrmModule.forFeature([PuzzleSubmission, Puzzle]),
+    RateLimiterModule,
+  ],
   providers: [PuzzleSubmissionService],
   controllers: [PuzzleSubmissionController],
 })

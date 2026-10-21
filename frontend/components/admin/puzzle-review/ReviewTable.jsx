@@ -317,4 +317,4 @@ const ReviewTable = ({
   );
 };
 
-export default ReviewTable; 
+export default ReviewTable;

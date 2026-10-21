@@ -20,10 +20,12 @@
     "test:backend:e2e": "npm run --workspace backend test:e2e",
     "test:onchain": "cargo test --manifest-path onchain/Cargo.toml --workspace",
     "fmt:onchain": "cargo fmt --manifest-path onchain/Cargo.toml --all -- --check",
+    "validate:puzzles": "node scripts/validate-puzzle-schema.js",
+    "migrate:puzzles": "node scripts/migrate-puzzles.js",
     "lint": "npm run lint:backend && npm run lint:frontend",
-    "test": "npm run test:backend && npm run test:frontend && npm run test:onchain",
+    "test": "npm run test:backend && npm run test:frontend && npm run test:onchain && npm run validate:puzzles",
     "build": "npm run build:backend && npm run build:frontend",
-    "ci": "npm run fmt:onchain && npm run lint && npm run test && npm run test:backend:e2e && npm run build"
+    "ci": "npm run fmt:onchain && npm run validate:puzzles && npm run lint && npm run test && npm run test:backend:e2e && npm run build"
   },
   "keywords": [
     "stellar",

@@ -15,11 +15,14 @@ import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { usePuzzleContract } from "@/hooks/usePuzzleContract";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
+import Confetti from "@/components/puzzles/Confetti";
+import ShareCompletion from "@/components/puzzles/ShareCompletion";
 import {
   getPuzzleAnswerOptions,
   getPuzzleAnswerType,
   validatePuzzleAnswer,
 } from "@/lib/puzzle-answer";
+import { ChainErrorBoundary } from "@/components/ChainErrorBoundary";
 import {
   CheckCircle2,
   XCircle,
@@ -503,6 +506,14 @@ const PuzzleComponent = ({
           {feedback && (
             <FeedbackToast feedback={feedback} prefersReducedMotion={prefersReducedMotion} />
           )}
+          {feedback?.correct && (
+            <>
+              <Confetti active={Boolean(feedback.correct)} />
+              <div className="mt-3">
+                <ShareCompletion puzzleTitle={puzzle.title} />
+              </div>
+            </>
+          )}
           {contractError && !feedback && (
             <Alert
               variant="destructive"
@@ -652,4 +663,11 @@ const PuzzleComponent = ({
   );
 };
 
-export default PuzzleComponent;
+const PuzzleComponentWithBoundary = (props) => (
+  <ChainErrorBoundary name="PuzzleComponent">
+    <PuzzleComponent {...props} />
+  </ChainErrorBoundary>
+);
+
+export { PuzzleComponent as PurePuzzleComponent };
+export default PuzzleComponentWithBoundary;

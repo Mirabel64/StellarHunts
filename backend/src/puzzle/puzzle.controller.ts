@@ -33,6 +33,13 @@ import { UpdatePuzzleDto } from './dto/update-puzzle.dto';
 export class PuzzleController {
   constructor(private readonly puzzleService: PuzzleService) {}
 
+  @Get('puzzles/daily')
+  @ApiOperation({ summary: "Today's featured puzzle (rotates at UTC midnight)" })
+  @ApiResponse({ status: 200, description: 'Featured puzzle with bonus XP.' })
+  getDaily() {
+    return this.puzzleService.getDailyPuzzle();
+  }
+
   @Post('admin/puzzles')
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -103,5 +110,19 @@ export class PuzzleController {
   @ApiResponse({ status: 200, description: 'List of active puzzles.' })
   findActive(@Query('difficulty') difficulty?: string) {
     return this.puzzleService.findActive(difficulty);
+  }
+
+  @Get('admin/puzzles/difficulty-suggestions')
+  @ApiOperation({ summary: 'Get puzzle difficulty auto-suggestions based on success rates (admin)' })
+  @ApiResponse({ status: 200, description: 'List of difficulty suggestions and alerts.' })
+  getDifficultySuggestions() {
+    return this.puzzleService.getDifficultySuggestions();
+  }
+
+  @Patch('admin/puzzles/:id/apply-difficulty')
+  @ApiOperation({ summary: 'Apply auto-suggested difficulty to puzzle (admin)' })
+  @ApiResponse({ status: 200, description: 'Puzzle difficulty updated.' })
+  applyDifficulty(@Param('id') id: string, @Req() request: Request) {
+    return this.puzzleService.applySuggestedDifficulty(id, this.actorId(request));
   }
 }

@@ -113,7 +113,7 @@ const PuzzleReviewDashboard = () => {
   // so the BulkActions bar disappears afterwards.
   const handleBulkApprove = async (reason = '') => {
     if (selectedReviews.length === 0) return;
-    
+
     setActionLoading(true);
     try {
       const result = await bulkApproveReviews(selectedReviews, reason);
@@ -137,7 +137,7 @@ const PuzzleReviewDashboard = () => {
   // Mirrors handleBulkApprove's guard clause, loading state, and cleanup.
   const handleBulkReject = async (reason = '') => {
     if (selectedReviews.length === 0) return;
-    
+
     setActionLoading(true);
     try {
       const result = await bulkRejectReviews(selectedReviews, reason);
@@ -178,7 +178,7 @@ const PuzzleReviewDashboard = () => {
       <ReviewStats stats={stats} loading={statsLoading} />
 
       {/* Filter controls for narrowing down the reviews list */}
-      <ReviewFilters 
+      <ReviewFilters
         filters={filters}
         onFiltersChange={updateFilters}
         disabled={loading}

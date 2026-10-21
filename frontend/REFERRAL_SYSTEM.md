@@ -45,7 +45,7 @@ The referral system encourages users to invite friends to join StellarHunts. Use
 ### 4. Custom Hook (`useReferral`)
 - **State Management**: Handles referral data and loading states
 - **API Integration**: Fetches and updates referral information
-- **Utility Functions**: 
+- **Utility Functions**:
   - `generateReferralLink()`: Creates unique referral URLs
   - `trackReferral()`: Records new referrals
   - `getRewardTier()`: Determines reward tier based on invite count
@@ -79,7 +79,7 @@ principal, not from the request body, preventing spoofed attributions.
 
 ### Referrer Rewards
 - **5 invites**: Rare NFT
-- **10 invites**: Epic NFT  
+- **10 invites**: Epic NFT
 - **25 invites**: Legendary NFT
 - **50 invites**: Mythic NFT
 - **Per referral**: 50 XP bonus
@@ -148,4 +148,4 @@ frontend/
 └── REFERRAL_SYSTEM.md
 ```
 
-This implementation provides a complete referral system that encourages user growth while rewarding both referrers and new users with exclusive bonuses and NFTs. 
+This implementation provides a complete referral system that encourages user growth while rewarding both referrers and new users with exclusive bonuses and NFTs.

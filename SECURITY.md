@@ -1,5 +1,47 @@
 # Security
 
+## Local Development - Pre-commit Hooks
+
+Pre-commit hooks are configured to catch security issues and code quality problems before they're committed:
+
+- **Gitleaks** detects hardcoded secrets in staged files
+- **detect-private-key** identifies accidentally committed private keys
+- **check-added-large-files** prevents committing large files (>1MB)
+- **General formatting checks** (trailing whitespace, mixed line endings, etc.)
+
+### Setup
+
+Pre-commit is installed via Python pip. The hooks are configured in `.pre-commit-config.yaml`:
+
+```bash
+# Install pre-commit (one-time setup)
+python3 -m pip install pre-commit
+
+# Install the git hooks
+pre-commit install
+```
+
+### Usage
+
+The hooks run automatically on every `git commit`. To run them manually on all files:
+
+```bash
+pre-commit run --all-files
+```
+
+To skip hooks temporarily (not recommended for security hooks):
+
+```bash
+git commit --no-verify
+```
+
+### Configuration
+
+- `.pre-commit-config.yaml` - Hook definitions and versions
+- `.gitleaks.toml` - Gitleaks detection rules and allowlists
+
+## CI Security Checks
+
 Security checks run in GitHub Actions for every pull request and push to `main`:
 
 - **CodeQL** analyzes JavaScript and TypeScript for common vulnerabilities.

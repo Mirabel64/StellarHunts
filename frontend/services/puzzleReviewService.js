@@ -162,57 +162,57 @@ class PuzzleReviewService {
   // Get all puzzle reviews with filtering and pagination
   async getPuzzleReviews(filters = {}) {
     await this.delay();
-    
+
     let filteredReviews = [...this.reviews];
-    
+
     // Apply filters
     if (filters.status) {
       filteredReviews = filteredReviews.filter(review => review.status === filters.status);
     }
-    
+
     if (filters.rating) {
       filteredReviews = filteredReviews.filter(review => review.rating === parseInt(filters.rating));
     }
-    
+
     if (filters.minRating) {
       filteredReviews = filteredReviews.filter(review => review.rating >= parseInt(filters.minRating));
     }
-    
+
     if (filters.maxRating) {
       filteredReviews = filteredReviews.filter(review => review.rating <= parseInt(filters.maxRating));
     }
-    
+
     if (filters.reviewType) {
       filteredReviews = filteredReviews.filter(review => review.reviewType === filters.reviewType);
     }
-    
+
     // Apply sorting
     const sortBy = filters.sortBy || 'createdAt';
     const sortOrder = filters.sortOrder || 'DESC';
-    
+
     filteredReviews.sort((a, b) => {
       let aValue = a[sortBy];
       let bValue = b[sortBy];
-      
+
       if (sortBy === 'createdAt' || sortBy === 'updatedAt') {
         aValue = new Date(aValue);
         bValue = new Date(bValue);
       }
-      
+
       if (sortOrder === 'ASC') {
         return aValue > bValue ? 1 : -1;
       } else {
         return aValue < bValue ? 1 : -1;
       }
     });
-    
+
     // Apply pagination
     const page = filters.page || 1;
     const limit = filters.limit || 20;
     const startIndex = (page - 1) * limit;
     const endIndex = startIndex + limit;
     const paginatedReviews = filteredReviews.slice(startIndex, endIndex);
-    
+
     return {
       success: true,
       message: 'Reviews retrieved successfully',
@@ -229,11 +229,11 @@ class PuzzleReviewService {
   async getReviewById(reviewId) {
     await this.delay();
     const review = this.reviews.find(r => r.id === reviewId);
-    
+
     if (!review) {
       throw new Error('Review not found');
     }
-    
+
     return {
       success: true,
       message: 'Review retrieved successfully',
@@ -296,7 +296,7 @@ class PuzzleReviewService {
   async getPuzzleReviewSummary(puzzleId) {
     await this.delay();
     const puzzleReviews = this.reviews.filter(r => r.puzzleId === puzzleId);
-    
+
     const summary = {
       puzzleId,
       totalReviews: puzzleReviews.length,
@@ -310,7 +310,7 @@ class PuzzleReviewService {
         return acc;
       }, {})
     };
-    
+
     return {
       success: true,
       message: 'Puzzle review summary retrieved successfully',
@@ -321,15 +321,15 @@ class PuzzleReviewService {
   // Report a review
   async reportReview(reviewId, reason) {
     await this.delay();
-    
+
     const review = this.reviews.find(r => r.id === reviewId);
     if (!review) {
       throw new Error('Review not found');
     }
-    
+
     review.reportCount += 1;
     review.updatedAt = new Date().toISOString();
-    
+
     return {
       success: true,
       message: 'Review reported successfully',
@@ -375,7 +375,7 @@ class PuzzleReviewService {
     const pending = this.reviews.filter(r => r.status === 'PENDING').length;
     const approved = this.reviews.filter(r => r.status === 'APPROVED').length;
     const rejected = this.reviews.filter(r => r.status === 'REJECTED').length;
-    
+
     this.stats = {
       ...this.stats,
       totalCount: total,
@@ -410,4 +410,4 @@ class PuzzleReviewService {
   }
 }
 
-export default new PuzzleReviewService(); 
+export default new PuzzleReviewService();

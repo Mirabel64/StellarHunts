@@ -8,7 +8,7 @@ export class AddUniqueWalletAddress1730000000000 implements MigrationInterface {
       'users',
       new TableUnique({
         name: 'UQ_USERS_WALLET_ADDRESS',
-        columnNames: ['wallet_address'],
+        columnNames: ['walletAddress'],
       }),
     );
   }

@@ -21,12 +21,12 @@ const useRewardStore = create(
         }
       },
 
-    
+
       addReward: (reward) => set((state) => ({
         rewards: [...state.rewards, reward],
       }), false, 'rewards/add'),
 
-     
+
       removeReward: (rewardId) => set((state) => ({
         rewards: state.rewards.filter((reward) => reward.id !== rewardId),
       }), false, 'rewards/remove'),

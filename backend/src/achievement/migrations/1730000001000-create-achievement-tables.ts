@@ -1,7 +1,9 @@
 import { MigrationInterface, QueryRunner, Table } from 'typeorm';
 
-export class CreateAchievementsTable1234567890123 implements MigrationInterface {
-  name = 'CreateAchievementsTable1234567890123';
+export class CreateAchievementTables1730000001000
+  implements MigrationInterface
+{
+  name = 'CreateAchievementTables1730000001000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     // Create achievement table

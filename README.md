@@ -75,7 +75,7 @@ Contract test and deployment details are in [`onchain/`](onchain/).
 | `onchain/contracts/stellar_hunts/` | Puzzle, progression, and game state contract |
 | `onchain/contracts/stellar_hunts_nft/` | Level badge NFT contract |
 | `onchain/contracts/stellar_hunts_types/` | Shared Soroban types |
-| `docs/` | Project documentation |
+| `docs/` | Project documentation, including the [puzzle author guide](docs/puzzle-author-guide.md) |
 
 ## Useful commands
 
@@ -84,7 +84,12 @@ npm run lint                 # lint backend and frontend
 npm run test                 # backend, frontend, and contract tests
 npm run build                # production builds for backend and frontend
 npm run test:backend:e2e     # backend end-to-end tests
+npm run --workspace backend db:migrate  # apply database migrations
+npm run --workspace backend db:seed     # insert the core demo dataset
 ```
+
+Database schema, migration, and seed conventions are documented in
+[docs/database-schema.md](docs/database-schema.md).
 
 ## Contributing and license
 

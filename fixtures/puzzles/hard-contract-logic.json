@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "id": "hard-contract-logic",
+  "title": "Soroban Auth Verification",
+  "description": "Inspect Soroban smart contract authorization and detect missing authentication checks.",
+  "difficulty": "hard",
+  "type": "code",
+  "content": {
+    "prompt": "Identify the missing function call in the following snippet that guarantees the player has cryptographically signed the invocation:\n\npub fn claim_reward(env: Env, player: Address) {\n    // Missing auth check here\n    mint_badge(&env, &player);\n}",
+    "initialCode": "player.",
+    "language": "rust"
+  },
+  "solution": "player.require_auth()",
+  "solutionType": "plain",
+  "hint": "Soroban Address types use a method that ensures the address authorized the transaction invocation.",
+  "reward": {
+    "rewardId": "reward-badge-hard-01",
+    "type": "nft",
+    "metadata": {
+      "rarity": "rare",
+      "badgeName": "Security Auditor"
+    }
+  },
+  "author": "SecurityGuild",
+  "tags": ["security", "auth", "rust", "contracts"],
+  "isActive": true
+}

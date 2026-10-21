@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "id": "easy-stellar-basics",
+  "title": "Stellar Network Fundamentals",
+  "description": "Understand the native asset and consensus mechanism of the Stellar network.",
+  "difficulty": "easy",
+  "type": "multiple_choice",
+  "content": {
+    "prompt": "What is the native asset of the Stellar network used to pay transaction fees and fund accounts?",
+    "options": [
+      "XLM (Lumen)",
+      "BTC (Bitcoin)",
+      "ETH (Ether)",
+      "SOL (Solana)"
+    ]
+  },
+  "solution": "XLM (Lumen)",
+  "solutionType": "plain",
+  "hint": "It is also known as the Lumen and denoted by three letters starting with X.",
+  "reward": {
+    "rewardId": "reward-badge-easy-01",
+    "type": "badge",
+    "metadata": {
+      "rarity": "common",
+      "badgeName": "Stellar Initiate"
+    }
+  },
+  "author": "StellarHuntsTeam",
+  "tags": ["stellar", "basics", "lumens"],
+  "isActive": true
+}

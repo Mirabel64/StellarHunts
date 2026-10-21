@@ -14,6 +14,7 @@ import { signTransaction } from "@stellar/freighter-api";
 import {
   useWalletConnection,
 } from "./useWalletConnection";
+import { classifyWalletError } from "@/lib/wallet-errors";
 
 /**
  * Default RPC endpoint for the Stellar Soroban testnet.
@@ -315,10 +316,13 @@ export function usePuzzleContract(opts = {}) {
         setFeedback(fb);
         return { ...fb, submitted: true };
       } catch (err) {
-        const message = err.message || "Transaction failed";
+        // A rejected signature or an unreachable RPC is not a wrong answer.
+        // Surface it through `error` (and the alert in PuzzleComponent) so
+        // the UI does not render an "Incorrect" toast for it.
+        const message = classifyWalletError(err, "Transaction failed");
         setError(message);
-        setFeedback({ correct: false, message });
-        return { correct: false, message, submitted: false };
+        setFeedback(null);
+        return { correct: false, message, submitted: false, error: true };
       } finally {
         setSubmitting(false);
       }
@@ -398,9 +402,9 @@ export function usePuzzleContract(opts = {}) {
         setLastHint(hint);
         return hint;
       } catch (err) {
-        const message = err.message || "Failed to fetch hint";
+        const message = classifyWalletError(err, "Failed to fetch hint");
         setError(message);
-        throw err;
+        throw new Error(message);
       } finally {
         setHintLoading(false);
       }

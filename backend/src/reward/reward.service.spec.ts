@@ -248,6 +248,8 @@ describe('RewardService', () => {
         rewardId: 'reward-001',
         challengeId: 'challenge-001',
         status: 'claimed',
+        dedupeKey: null,
+        transactionHash: null,
       });
       expect(mockRewardRepository.increment).toHaveBeenCalledWith(
         { id: 'reward-001' },
@@ -255,6 +257,93 @@ describe('RewardService', () => {
         1,
       );
       expect(result).toEqual(expectedClaim);
+    });
+
+    it('should derive dedupe key per (user, event) and log issuance event once', async () => {
+      const claimWithEventDto: ClaimRewardDto = {
+        userId: 'user-001',
+        challengeId: 'challenge-001',
+        eventId: 'evt-tx-999',
+        transactionHash: '0xabc123',
+      };
+
+      const expectedClaim = {
+        id: 'claim-001',
+        userId: 'user-001',
+        rewardId: 'reward-001',
+        challengeId: 'challenge-001',
+        dedupeKey: 'user-001:evt-tx-999',
+        transactionHash: '0xabc123',
+        status: 'claimed',
+      };
+
+      mockRewardClaimRepository.findOne.mockResolvedValue(null);
+      mockRewardRepository.findOne.mockResolvedValue(mockReward);
+      mockRewardClaimRepository.create.mockReturnValue(expectedClaim);
+      mockRewardClaimRepository.save.mockResolvedValue(expectedClaim);
+      mockRewardRepository.increment.mockResolvedValue({ affected: 1 });
+
+      const logSpy = jest.spyOn((service as any).logger, 'log');
+
+      const result = await service.claimReward(claimWithEventDto);
+
+      expect(mockRewardClaimRepository.create).toHaveBeenCalledWith({
+        userId: 'user-001',
+        rewardId: 'reward-001',
+        challengeId: 'challenge-001',
+        status: 'claimed',
+        dedupeKey: 'user-001:evt-tx-999',
+        transactionHash: '0xabc123',
+      });
+      expect(mockRewardRepository.increment).toHaveBeenCalledTimes(1);
+      expect(result).toEqual(expectedClaim);
+      // Issuance event logged once upon successful creation
+      expect(logSpy).toHaveBeenCalledTimes(1);
+      expect(logSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Reward issued successfully: user user-001 claimed reward reward-001'),
+      );
+    });
+
+    it('should simulate transaction retry: return existing claim without duplicating issuance, incrementing counter, or logging issuance event again', async () => {
+      const retryDto: ClaimRewardDto = {
+        userId: 'user-001',
+        challengeId: 'challenge-001',
+        eventId: 'evt-tx-999',
+      };
+
+      const existingClaim = {
+        id: 'claim-001',
+        userId: 'user-001',
+        rewardId: 'reward-001',
+        challengeId: 'challenge-001',
+        dedupeKey: 'user-001:evt-tx-999',
+        status: 'claimed',
+      };
+
+      // Simulate retry: findOne for dedupeKey finds the previously created claim
+      mockRewardClaimRepository.findOne.mockImplementation(({ where }: any) => {
+        if (where?.dedupeKey === 'user-001:evt-tx-999') {
+          return Promise.resolve(existingClaim);
+        }
+        return Promise.resolve(null);
+      });
+
+      const logSpy = jest.spyOn((service as any).logger, 'log');
+      const warnSpy = jest.spyOn((service as any).logger, 'warn');
+
+      const result = await service.claimReward(retryDto);
+
+      // Returns the existing claim idempotently
+      expect(result).toEqual(existingClaim);
+      // Does not create a new claim or save again
+      expect(mockRewardClaimRepository.save).not.toHaveBeenCalled();
+      // Counter not incremented on retry
+      expect(mockRewardRepository.increment).not.toHaveBeenCalled();
+      // Issuance event NOT logged again on retry (only warn/dedupe message)
+      expect(logSpy).not.toHaveBeenCalled();
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Duplicate reward issuance retry detected'),
+      );
     });
 
     it('should throw ConflictException when reward already claimed', async () => {

@@ -198,6 +198,48 @@ the e2e suite.
 | `npm run test:watch` | `jest --watch`             | Re-run unit tests on file change.                    |
 | `npm run test:cov`   | `jest --coverage`          | Unit tests with coverage report.                     |
 | `npm run test:e2e`   | `jest --config ./test/jest-e2e.json` | Run the E2E test suite.                |
+| `npm run db:migrate` | `typeorm-ts-node-commonjs migration:run -d src/database/data-source.ts` | Apply pending schema migrations. |
+| `npm run db:migrations` | `typeorm-ts-node-commonjs migration:show -d src/database/data-source.ts` | List applied and pending migrations. |
+| `npm run db:migrate:revert` | `typeorm-ts-node-commonjs migration:revert -d src/database/data-source.ts` | Roll back the latest migration. |
+| `npm run db:seed`    | `ts-node -r tsconfig-paths/register scripts/seed.ts` | Insert the idempotent core demo dataset. |
+| `npm run db:setup`   | `npm run db:migrate && npm run db:seed` | Migrate and seed in one step. |
+
+### Schema migrations and seed data
+
+The core schema (users, puzzles, puzzle completions, rewards, and reward
+claims) is defined by the versioned baseline migration in
+`src/database/migrations/`. Run migrations against a real database before
+starting the API when `DATABASE_SYNC=false`:
+
+```bash
+cd backend
+npm run db:migrate
+npm run db:seed
+```
+
+The seed refuses to run when `NODE_ENV=production` unless
+`SEED_ALLOW_PRODUCTION=true` is set, and it never truncates existing data.
+See [`docs/database-schema.md`](../docs/database-schema.md) for the ER
+diagram, table constraints, and the migration authoring checklist.
+
+### API integration suite
+
+`test/api-integration.e2e-spec.ts` (issue #756) is part of the e2e run. It
+boots the real `AppModule` against the test database and:
+
+1. **Discovers every mounted route** from the application's own Swagger
+document and calls each one, so a new endpoint is covered automatically and
+an unmounted route fails the suite.
+2. **Exercises the core flows against fixtures** — puzzle discovery, admin
+creation and publication, correct/incorrect submission grading, rewards and
+duplicate-claim prevention, content, and categories.
+
+Fixtures live in `test/fixtures/test-database.fixture.ts`. `resetDatabase()`
+truncates every entity table and `seedDatabase()` inserts deterministic admin,
+user, puzzle, reward, category, content, and progress records. The suite needs
+the same services as the rest of the e2e run (`DATABASE_*` with
+`DATABASE_SYNC=true`, plus Redis); CI provides them and uploads the coverage
+report as the `backend-e2e-coverage` artifact.
 
 ### Run Modes
 
@@ -273,8 +315,11 @@ npm run test:watch
 # With coverage
 npm run test:cov
 
-# E2E tests
+# E2E tests (includes the API integration suite)
 npm run test:e2e
+
+# E2E tests + coverage report (coverage-e2e/lcov.info)
+npm run test:e2e:cov
 ```
 
 ## Code Quality
