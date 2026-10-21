@@ -1,6 +1,6 @@
 import React from "react";
 import { Flame } from "lucide-react";
-import RankBadge from "./RankBadge"; 
+import RankBadge from "./RankBadge";
 
 // PlayerCard renders a single row in a leaderboard: the player's rank,
 // name, streak, stats, and score, with a subtle hover gradient effect.
@@ -12,7 +12,7 @@ const PlayerCard = ({ player, rank }) => {
       <div className="relative group">
         {/* Animated background on hover */}
         <div className="absolute inset-0 bg-gradient-to-r from-purple-500/0 via-purple-500/10 to-pink-500/0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 rounded-lg" />
-  
+
         <div className="relative flex items-center gap-4 p-4 backdrop-blur-sm bg-white/5 border border-white/10 rounded-lg">
           {/* Rank and Badge */}
           <div className="flex items-center gap-3">
@@ -21,7 +21,7 @@ const PlayerCard = ({ player, rank }) => {
             {/* Numeric rank, shown alongside the badge */}
             <span className="text-2xl font-bold text-white/80">#{rank}</span>
           </div>
-  
+
           {/* Player Info */}
           <div className="flex-grow">
             <div className="flex items-center gap-2">
@@ -40,7 +40,7 @@ const PlayerCard = ({ player, rank }) => {
               <span>{player.nfts} NFTs</span>
             </div>
           </div>
-  
+
           {/* Score */}
           <div className="text-right">
             {/* Score formatted with locale-aware thousands separators, styled with a gradient text fill */}

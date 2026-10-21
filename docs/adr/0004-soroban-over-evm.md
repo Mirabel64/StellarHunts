@@ -1,7 +1,7 @@
 # ADR-0004: Use Soroban (Stellar) Over EVM-Compatible Chains
 
-**Date:** 2025-07-24  
-**Status:** Accepted  
+**Date:** 2025-07-24
+**Status:** Accepted
 **Deciders:** StellarHunts core team
 
 ---

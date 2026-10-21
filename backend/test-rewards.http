@@ -113,4 +113,4 @@ Content-Type: application/json
 DELETE http://localhost:4000/rewards/{{rewardId}}
 
 ### 16. Try to delete reward with claims (should fail with 400)
-DELETE http://localhost:4000/rewards/{{rewardIdWithClaims}} 
+DELETE http://localhost:4000/rewards/{{rewardIdWithClaims}}

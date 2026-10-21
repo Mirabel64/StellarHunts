@@ -113,3 +113,8 @@ tmp/
 
 # ── Docker (local overrides only — Dockerfiles stay tracked) ─
 docker-compose.override.yml
+
+# ── Pre-commit & Gitleaks ────────────────────────────────────
+.pre-commit-cache/
+gitleaks.sarif
+gitleaks-report.json
