@@ -3,6 +3,7 @@ import {
   NotFoundException,
   BadRequestException,
   ConflictException,
+  Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
@@ -15,6 +16,8 @@ import { isUniqueViolation } from '../common/security/unique-violation';
 
 @Injectable()
 export class RewardService {
+  private readonly logger = new Logger(RewardService.name);
+
   constructor(
     @InjectRepository(Reward)
     private readonly rewardRepository: Repository<Reward>,
@@ -110,11 +113,27 @@ export class RewardService {
    * concurrent claims cannot lose an update.
    */
   async claimReward(claimRewardDto: ClaimRewardDto): Promise<RewardClaim> {
-    const { userId, challengeId } = claimRewardDto;
+    const { userId, challengeId, eventId, transactionHash } = claimRewardDto;
+    const dedupeKey =
+      claimRewardDto.dedupeKey ??
+      (eventId ? `${userId}:${eventId}` : undefined);
 
     return this.dataSource.transaction(async (manager) => {
       const claims = manager.getRepository(RewardClaim);
       const rewards = manager.getRepository(Reward);
+
+      // Check if user has already claimed this specific tx/event via dedupeKey (idempotent retry)
+      if (dedupeKey) {
+        const existingDedupeClaim = await claims.findOne({
+          where: { dedupeKey },
+        });
+        if (existingDedupeClaim) {
+          this.logger.warn(
+            `Duplicate reward issuance retry detected for user ${userId} and dedupeKey "${dedupeKey}". Returning existing claim ${existingDedupeClaim.id}.`,
+          );
+          return existingDedupeClaim;
+        }
+      }
 
       // Check if user has already claimed this reward
       const existingClaim = await claims.findOne({
@@ -149,12 +168,25 @@ export class RewardService {
         rewardId: reward.id,
         challengeId,
         status: 'claimed',
+        dedupeKey: dedupeKey ?? null,
+        transactionHash: transactionHash ?? null,
       });
       let savedClaim: RewardClaim;
       try {
         savedClaim = await claims.save(claim);
       } catch (error) {
         if (isUniqueViolation(error)) {
+          if (dedupeKey) {
+            const existingRetry = await claims.findOne({
+              where: { dedupeKey },
+            });
+            if (existingRetry) {
+              this.logger.warn(
+                `Concurrent duplicate retry resolved for dedupeKey "${dedupeKey}". Returning existing claim.`,
+              );
+              return existingRetry;
+            }
+          }
           throw new ConflictException('Reward already claimed');
         }
         throw error;
@@ -163,8 +195,20 @@ export class RewardService {
       // Atomic counter increment (issue #302)
       await rewards.increment({ id: reward.id }, 'currentClaims', 1);
 
+      // Log issuance event once upon successful creation (issue #741)
+      this.logger.log(
+        `Reward issued successfully: user ${userId} claimed reward ${reward.id} for challenge ${challengeId} (claim ID: ${savedClaim.id}${dedupeKey ? `, dedupeKey: ${dedupeKey}` : ''})`,
+      );
+
       return savedClaim;
     });
+  }
+
+  /**
+   * Issue reward with idempotency protection for transaction retries (issue #741)
+   */
+  async issueReward(claimRewardDto: ClaimRewardDto): Promise<RewardClaim> {
+    return await this.claimReward(claimRewardDto);
   }
 
   /**

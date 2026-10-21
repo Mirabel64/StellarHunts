@@ -57,6 +57,9 @@ jobs:
               sys.exit(1)
           "
 
+      - name: Validate puzzle templates against JSON schema
+        run: node scripts/validate-puzzle-schema.js
+
   # Changed-path matrix: only run the jobs relevant to the files touched
   # in a PR/push, while preserving a full run whenever shared configuration
   # (lockfile, workflows, release config, root manifests) changes. This
@@ -102,6 +105,10 @@ jobs:
               - '**/package-lock.json'
               - '.github/workflows/**.yml'
               - '.github/workflows/**.yaml'
+              - 'schemas/**'
+              - 'fixtures/**'
+              - 'scripts/validate-puzzle-schema.js'
+              - 'scripts/migrate-puzzles.js'
             run_all:
               - 'package.json'
               - 'package-lock.json'

@@ -20,6 +20,7 @@ import {
   getPuzzleAnswerType,
   validatePuzzleAnswer,
 } from "@/lib/puzzle-answer";
+import { ChainErrorBoundary } from "@/components/ChainErrorBoundary";
 import {
   CheckCircle2,
   XCircle,
@@ -652,4 +653,11 @@ const PuzzleComponent = ({
   );
 };
 
-export default PuzzleComponent;
+const PuzzleComponentWithBoundary = (props) => (
+  <ChainErrorBoundary name="PuzzleComponent">
+    <PuzzleComponent {...props} />
+  </ChainErrorBoundary>
+);
+
+export { PuzzleComponent as PurePuzzleComponent };
+export default PuzzleComponentWithBoundary;
