@@ -86,4 +86,4 @@ const ReferralNotification = ({ notification, onClose }) => {
   );
 };
 
-export default ReferralNotification; 
+export default ReferralNotification;

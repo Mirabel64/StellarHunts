@@ -1,138 +1,96 @@
 # StellarHunts
 
-A gamified blockchain application built on **Stellar / Soroban** that combines educational puzzles with NFT rewards. Players solve cryptographic riddles and blockchain-related challenges to earn unique on-chain NFTs while learning about web3 technologies.
-
-## Tech Stack
-
-| Layer | Technology |
-|-------|------------|
-| Frontend | Next.js 14, React 18, Tailwind CSS |
-| Backend | NestJS, TypeORM, PostgreSQL |
-| Smart Contracts | Rust, Soroban SDK, Stellar |
-| Wallet | Freighter (`@stellar/freighter-api`), `@stellar/stellar-sdk` |
-| State Management | Zustand, Redux Toolkit |
-| Auth | NextAuth.js, Passport (JWT) |
-| Real-time | Socket.IO, Redis |
+StellarHunts is a puzzle game built around Stellar and Soroban. Players solve blockchain and cryptography challenges, progress through difficulty levels, and can claim on-chain NFT badges. The repository is a monorepo containing a Next.js web app, a NestJS API, and Rust Soroban contracts.
 
 ## Architecture
 
-This monorepo contains three primary components:
+```mermaid
+flowchart LR
+    Player[Player browser] -->|UI and Freighter wallet| Web[frontend: Next.js]
+    Web -->|REST API| API[backend: NestJS]
+    API --> DB[(PostgreSQL)]
+    API -->|Soroban RPC| Game[stellar_hunts contract]
+    Game -->|mint badge| NFT[stellar_hunts_nft contract]
+    Player -->|signed transactions| Game
+```
 
-- **`frontend/`** — Next.js application with server-side rendering, responsive UI components, and Freighter wallet integration
-- **`backend/`** — NestJS API server handling authentication, puzzle management, rewards, leaderboards, and user progression
-- **`onchain/`** — Soroban smart contracts deployed on the Stellar network for NFT badge minting, level progression, and game logic
+The frontend serves the game interface and wallet integration. The backend provides API features and persists application data in PostgreSQL. The game contract manages questions and player progression; the NFT contract issues level badges. Local API development can use the backend's mock Stellar mode without deployed contracts.
 
-## Features
+## Quickstart
 
-- **Puzzle-based gameplay** — Cryptographic riddles that test blockchain knowledge across multiple difficulty tiers
-- **On-chain NFT reward system** — Earn unique NFTs as achievement badges via Soroban smart contracts
-- **Progressive difficulty** — Puzzles organized into categories (Blockchain Basics, Smart Contracts, Soroban, NFTs, DeFi) with increasing complexity
-- **Global leaderboard** — Competitive ranking system with XP tracking and milestone achievements
-- **Referral program** — Invite friends to earn bonus XP, rare NFTs, and exclusive badges
-- **Wallet integration** — Connect any Stellar-compatible wallet (Freighter, Lobstr, Albedo) to participate, claim rewards, and track on-chain assets
-- **Multiplayer support** — Queue-based matchmaking for collaborative puzzle-solving sessions
+### Requirements
 
-## Getting Started
+- Node.js 18 or later and npm
+- PostgreSQL 13 or later
+- Rust and Cargo (only needed to build or test the contracts)
+- GNU Make (optional; commands below can also be run from each package)
 
-### Prerequisites
-
-- Node.js 18+
-- PostgreSQL 13+
-- Rust + Soroban / Stellar CLI
-- A Stellar wallet (Freighter recommended)
-
-### Installation
+### Clone and install
 
 ```bash
-# Clone the repository
-git clone https://github.com/UnityChainx/StellarHunts.git
+git clone https://github.com/UnityChainxx/StellarHunts.git
 cd StellarHunts
-
-# Install frontend dependencies
-cd frontend && npm install
-
-# Install backend dependencies
-cd ../backend && npm install
+npm install
 ```
 
-### Configuration
-
-Create a `.env` file in the `backend/` directory with the following variables:
-
-```env
-DATABASE_HOST=localhost
-DATABASE_PORT=5432
-DATABASE_USER=postgres
-DATABASE_PASSWORD=your_password
-DATABASE_NAME=stellarshunts
-DATABASE_SYNC=true
-NODE_ENV=development
-
-# Stellar / Soroban
-STELLAR_MODE=mock
-STELLAR_NETWORK=testnet
-SOROBAN_RPC_URL=https://soroban-testnet.stellar.org
-STELLAR_HUNTS_CONTRACT_ID=...
-STELLAR_HUNTS_NFT_CONTRACT_ID=...
-```
-
-### Development
+The root npm workspace installs frontend and backend dependencies. Create a PostgreSQL database and configure the backend:
 
 ```bash
-# Start the backend (API server on port 3001)
-cd backend && npm run start:dev
-
-# Start the frontend (dev server on port 3000)
-cd frontend && npm run dev
-
-# Build & test onchain contracts
-cd onchain && cargo test --workspace
+Copy-Item backend/.env.example backend/.env
 ```
 
-## Project Structure
+Edit `backend/.env` with your local PostgreSQL host, username, password, and database name. For a local UI/API run without deployed contracts, set `STELLAR_MODE=mock`, `NODE_ENV=development`, and `PORT=3001`. Keep `DATABASE_SYNC=true` for a disposable development database only; use migrations and disable synchronization for persistent or production data. See [backend configuration](backend/README.md#getting-started) for the full environment reference.
 
-```
-StellarHunts/
-├── frontend/                # Next.js web application
-│   ├── app/                 # App router pages and layouts
-│   ├── components/          # Reusable UI components
-│   ├── hooks/               # Custom React hooks
-│   ├── lib/                 # Utilities and configuration
-│   ├── services/            # API service layer
-│   └── store/               # State management (Zustand)
-├── backend/                 # NestJS API server
-│   ├── src/                 # Source code
-│   │   ├── auth/            # Authentication and authorization
-│   │   ├── content/         # Educational content management
-│   │   ├── puzzle-category/ # Puzzle categorization and management
-│   │   ├── rewards/         # NFT and token reward distribution
-│   │   ├── progress/        # User progress tracking
-│   │   ├── leaderboard/     # Competitive ranking system
-│   │   ├── referrals/       # Referral program logic
-│   │   ├── sessions/        # Session management
-│   │   └── analytics/       # Event tracking and metrics
-│   └── test/                # E2E tests
-└── onchain/                 # Soroban smart contracts (Rust)
-    ├── contracts/
-    │   ├── stellar_hunts/         # Game contract (Rust)
-    │   ├── stellar_hunts_nft/     # NFT badge contract (Rust)
-    │   └── stellar_hunts_receiver/# Test helper
-    └── Cargo.toml            # Workspace manifest
+### Run
+
+Open two terminals from the repository root:
+
+```bash
+npm run dev:backend
 ```
 
-## Contributing
+```bash
+npm run dev:frontend
+```
 
-1. Fork the repository and create a feature branch from `main`
-2. Make your changes following the existing code conventions
-3. Ensure tests pass and linting is clean
-4. Submit a pull request with a clear description of the changes
+The API listens on [http://localhost:3001](http://localhost:3001), and the web app is at [http://localhost:3000](http://localhost:3000). In non-production development, API documentation is available at [http://localhost:3001/docs](http://localhost:3001/docs). Install Freighter in your browser to exercise wallet features.
 
-All contributions are reviewed for code quality, test coverage, and alignment with project goals.
+### Contracts
 
-## License
+Install the `wasm32-unknown-unknown` Rust target for WebAssembly builds. Then, from the root:
 
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+```bash
+npm run test:onchain
+npm run build:onchain
+```
 
-## Support
+Contract test and deployment details are in [`onchain/`](onchain/).
 
-For questions, bug reports, or feature requests, please open an issue on GitHub or contact the development team.
+## Repository layout
+
+| Directory | Purpose |
+| --- | --- |
+| `frontend/` | Next.js client, game UI, and Stellar wallet integration |
+| `backend/` | NestJS API, authentication, application data, and PostgreSQL integration |
+| `onchain/contracts/stellar_hunts/` | Puzzle, progression, and game state contract |
+| `onchain/contracts/stellar_hunts_nft/` | Level badge NFT contract |
+| `onchain/contracts/stellar_hunts_types/` | Shared Soroban types |
+| `docs/` | Project documentation, including the [puzzle author guide](docs/puzzle-author-guide.md) |
+
+## Useful commands
+
+```bash
+npm run lint                 # lint backend and frontend
+npm run test                 # backend, frontend, and contract tests
+npm run build                # production builds for backend and frontend
+npm run test:backend:e2e     # backend end-to-end tests
+npm run --workspace backend db:migrate  # apply database migrations
+npm run --workspace backend db:seed     # insert the core demo dataset
+```
+
+Database schema, migration, and seed conventions are documented in
+[docs/database-schema.md](docs/database-schema.md).
+
+## Contributing and license
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the contribution workflow. StellarHunts is licensed under the MIT License; see [LICENSE](LICENSE).

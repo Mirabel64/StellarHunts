@@ -1,0 +1,71 @@
+# =============================================================================
+# Dockerfile.backend — NestJS API Server (multi-stage)
+# =============================================================================
+#
+# Stages:
+#   deps      — install production + dev dependencies
+#   build     — compile TypeScript → dist/
+#   runner    — minimal production image
+#
+# Build context: repository root (so `COPY` paths are relative to the root)
+# Usage (from repo root):
+#   docker build -f Dockerfile.backend -t stellarhunts-backend .
+#
+# =============================================================================
+
+# ── Stage 1: install all dependencies ────────────────────────────────────────
+FROM node:18-alpine AS deps
+
+# Install OS-level build tools required by native addons (e.g., bcrypt).
+RUN apk add --no-cache python3 make g++
+
+WORKDIR /app
+
+# Copy package manifests first to take advantage of layer caching — the npm ci
+# layer is only invalidated when package-lock.json changes.
+COPY backend/package.json backend/package-lock.json ./
+
+# Install ALL dependencies (including devDependencies needed for the build).
+RUN npm ci --prefer-offline
+
+# ── Stage 2: build ───────────────────────────────────────────────────────────
+FROM node:18-alpine AS build
+
+WORKDIR /app
+
+# Copy installed node_modules from the deps stage.
+COPY --from=deps /app/node_modules ./node_modules
+
+# Copy the full backend source.
+COPY backend/ .
+
+# Compile TypeScript.
+RUN npm run build
+
+# Prune development dependencies — only production deps go into the runner.
+RUN npm prune --production
+
+# ── Stage 3: production runner ───────────────────────────────────────────────
+FROM node:18-alpine AS runner
+
+# Security: run as a non-root user.
+RUN addgroup --system --gid 1001 nodejs \
+  && adduser  --system --uid 1001 nestjs
+
+WORKDIR /app
+
+# Copy only what is needed to run the compiled application.
+COPY --from=build --chown=nestjs:nodejs /app/dist         ./dist
+COPY --from=build --chown=nestjs:nodejs /app/node_modules ./node_modules
+COPY --from=build --chown=nestjs:nodejs /app/package.json ./package.json
+
+USER nestjs
+
+# Default port — override with PORT env var or via docker-compose.
+EXPOSE 3001
+
+# Health check: poll the /health endpoint every 30 s.
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+  CMD wget -qO- http://localhost:3001/health || exit 1
+
+CMD ["node", "dist/main"]

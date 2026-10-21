@@ -1,6 +1,10 @@
-import { Injectable, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  OnApplicationShutdown,
+} from '@nestjs/common';
 import { InjectRedis } from '@nestjs-modules/ioredis';
-import Redis from 'ioredis';
+import type { Redis } from 'ioredis';
 
 /**
  * CacheService
@@ -20,9 +24,14 @@ import Redis from 'ioredis';
  *     which is the same behaviour as before this PR (#107).
  */
 @Injectable()
-export class CacheService {
+export class CacheService implements OnApplicationShutdown {
   private readonly logger = new Logger(CacheService.name);
   private readonly inFlight = new Map<string, Promise<unknown>>();
+  private readonly namespace =
+    process.env.CACHE_NAMESPACE?.trim() || 'stellarhunts';
+  private hits = 0;
+  private misses = 0;
+  private invalidationVersion = 0;
 
   constructor(@InjectRedis() private readonly redis: Redis) {}
 
@@ -41,10 +50,13 @@ export class CacheService {
     loader: () => Promise<T>,
     jitterSeconds: number = 10,
   ): Promise<T> {
+    const scopedKey = `${this.namespace}:${key}`;
+    const invalidationVersion = this.invalidationVersion;
+
     // 1. Try Redis first.
     let cached: string | null = null;
     try {
-      cached = await this.redis.get(key);
+      cached = await this.redis.get(scopedKey);
     } catch (err) {
       this.logger.warn(
         `Redis READ failed for key "${key}": ${(err as Error).message}. Falling through to loader.`,
@@ -52,15 +64,20 @@ export class CacheService {
     }
     if (cached !== null) {
       try {
-        return JSON.parse(cached) as T;
+        const value = JSON.parse(cached) as T;
+        this.hits += 1;
+        return value;
       } catch (err) {
         // Corrupt cache entry — drop it and fall through to the loader.
-        this.logger.warn(`Redis returned non-JSON for key "${key}": ${(err as Error).message}.`);
+        this.logger.warn(
+          `Redis returned non-JSON for key "${key}": ${(err as Error).message}.`,
+        );
       }
     }
+    this.misses += 1;
 
     // 2. Single-flight: piggyback on the in-flight promise if one exists.
-    const existing = this.inFlight.get(key);
+    const existing = this.inFlight.get(scopedKey);
     if (existing) {
       return existing as Promise<T>;
     }
@@ -73,8 +90,12 @@ export class CacheService {
       try {
         const fresh = await loader();
         try {
-          const ttl = baseTtlSeconds + Math.floor(Math.random() * Math.max(1, jitterSeconds));
-          await this.redis.set(key, JSON.stringify(fresh), 'EX', ttl);
+          const ttl =
+            baseTtlSeconds +
+            Math.floor(Math.random() * Math.max(1, jitterSeconds));
+          if (invalidationVersion === this.invalidationVersion) {
+            await this.redis.set(scopedKey, JSON.stringify(fresh), 'EX', ttl);
+          }
         } catch (err) {
           this.logger.warn(
             `Redis WRITE failed for key "${key}": ${(err as Error).message}. Returning value without caching.`,
@@ -82,30 +103,72 @@ export class CacheService {
         }
         return fresh;
       } finally {
-        this.inFlight.delete(key);
+        this.inFlight.delete(scopedKey);
       }
     })();
 
-    this.inFlight.set(key, promise);
+    this.inFlight.set(scopedKey, promise);
     return promise as Promise<T>;
   }
 
-  /**
-   * Invalidate one or more keys. Currently unused (we rely on TTL-only
-   * invalidation for v1) but exposed so future write paths / admin tools
-   * can flip caches manually without a hard reload (#107).
-   */
+  /** Invalidate one or more namespaced cache keys. */
   async invalidate(...keys: string[]): Promise<void> {
     if (keys.length === 0) return;
+    this.invalidationVersion += 1;
     try {
-      await this.redis.del(...keys);
+      await this.redis.del(...keys.map((key) => `${this.namespace}:${key}`));
     } catch (err) {
       this.logger.warn(`Redis DEL failed: ${(err as Error).message}.`);
     }
   }
 
+  /** Invalidate all keys whose feature-specific key starts with `prefix`. */
+  async invalidatePrefix(prefix: string): Promise<void> {
+    this.invalidationVersion += 1;
+    try {
+      const keys = await this.redis.keys(`${this.namespace}:${prefix}*`);
+      if (keys.length > 0) await this.redis.del(...keys);
+    } catch (err) {
+      this.logger.warn(`Redis prefix invalidation failed: ${(err as Error).message}.`);
+    }
+  }
+
+  /** Snapshot suitable for a metrics endpoint or periodic metrics exporter. */
+  getMetrics(): { hits: number; misses: number; hitRate: number } {
+    const total = this.hits + this.misses;
+    return {
+      hits: this.hits,
+      misses: this.misses,
+      hitRate: total === 0 ? 0 : this.hits / total,
+    };
+  }
+
   /** Test/observability helper: number of in-flight loaders right now. */
   inflightCount(): number {
     return this.inFlight.size;
+  }
+
+  /**
+   * Graceful shutdown hook — release the Redis connection so the event
+   * loop can drain and the process can exit. The underlying client uses
+   * `lazyConnect`, so it may be in the `wait` (never connected) or `end`
+   * (already closed) state; in those cases there is nothing to quit.
+   */
+  async onApplicationShutdown(): Promise<void> {
+    const status = this.redis.status;
+    try {
+      if (status === 'ready') {
+        await this.redis.quit();
+      } else if (status !== 'end') {
+        // 'wait' | 'connecting' | 'reconnecting' — tear down without a
+        // round-trip to a server we never fully connected to.
+        this.redis.disconnect();
+      }
+      this.logger.log(`Redis connection closed (status was "${status}").`);
+    } catch (err) {
+      this.logger.warn(
+        `Redis disconnect failed (status "${status}"): ${(err as Error).message}`,
+      );
+    }
   }
 }

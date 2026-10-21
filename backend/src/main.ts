@@ -4,6 +4,18 @@ import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 
 import { AppModule } from './app.module';
+import { DOCS_ROUTE_EXCLUSIONS, buildApiPrefix } from './api-prefix';
+import { setupSwagger } from './swagger';
+import { securityHeadersConfig } from './security-headers';
+import { RequestTraceInterceptor } from './common/interceptors/request-trace.interceptor';
+
+/**
+ * Hard limit (ms) we allow the graceful shutdown sequence to take before
+ * forcing process exit. Kubernetes/the container runtime send a SIGKILL
+ * ~30s after SIGTERM, so we stay safely underneath that to avoid being
+ * killed mid-shutdown while still guaranteeing the process eventually exits.
+ */
+const FORCE_SHUTDOWN_TIMEOUT_MS = 25_000;
 
 async function bootstrap(): Promise<void> {
   const logger = new Logger('Bootstrap');
@@ -29,52 +41,36 @@ async function bootstrap(): Promise<void> {
 
   app.enableCors({
     origin: configService.get<string>('appConfig.cors.origin') ?? '*',
-    methods: configService.get<string[]>('appConfig.cors.methods') ?? [
-      'GET',
-      'POST',
-      'PUT',
-      'DELETE',
-      'OPTIONS',
-    ],
-    allowedHeaders: configService.get<string[]>(
-      'appConfig.cors.allowedHeaders',
-    ) ?? [
-      'Origin',
-      'X-Requested-With',
-      'Content-Type',
-      'Accept',
-      'Authorization',
-    ],
-    credentials:
-      configService.get<boolean>('appConfig.cors.credentials') ?? true,
+    methods: configService.get<string[]>('appConfig.cors.methods') ?? ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: configService.get<string[]>('appConfig.cors.allowedHeaders') ?? ['Content-Type', 'Authorization'],
+    credentials: configService.get<boolean>('appConfig.cors.credentials') ?? true,
   });
-
+  app.use(helmet());
+  // forbidNonWhitelisted is the settled posture (issue #529): unknown
+  // properties must be rejected with 400, not silently stripped. The pipe
+  // spec in src/config/global-validation-pipe.spec.ts asserts this mode.
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
       transform: true,
-      forbidNonWhitelisted: false,
+      forbidNonWhitelisted: true,
     }),
   );
 
-  const apiVersion = configService.get<string>('appConfig.apiVersion') ?? '1.0';
-  const swaggerConfig = new DocumentBuilder()
-    .setTitle('StellarHunts API')
-    .setDescription('StellarHunts backend REST API documentation.')
-    .setVersion(apiVersion)
-    .addBearerAuth(
-      { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' },
-      'bearer',
-    )
-    .build();
-  const document = SwaggerModule.createDocument(app, swaggerConfig);
-  // Excluded from the global prefix above, so this resolves to /docs.
-  SwaggerModule.setup('docs', app, document);
+  // Issue #753: Apply structured request tracing globally.
+  // Every request receives a UUID trace ID (X-Trace-Id header) and emits
+  // JSON-structured incoming_request / outgoing_response log events.
+  // Sampling is controlled via LOG_SAMPLE_RATE env var (0–1, default 1).
+  app.useGlobalInterceptors(new RequestTraceInterceptor());
 
-  const port = parseInt(process.env.PORT, 10) || 3001;
+  // Respect `appConfig.swagger.enabled` (see backend/config/app.config.ts):
+  // the UI is mounted in development but stays off by default in
+  // production/staging/test unless `SWAGGER_ENABLED=true` is set explicitly.
+  setupSwagger(app, configService);
+
+  const port = Number.parseInt(process.env.PORT ?? '3001', 10);
   await app.listen(port);
   logger.log(`StellarHunts API listening on http://localhost:${port}`);
-  logger.log(`Swagger UI available at http://localhost:${port}/docs`);
 }
 
-bootstrap();
+void bootstrap();

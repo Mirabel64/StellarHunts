@@ -7,7 +7,15 @@ import AnimatedBlurBackground from "@/components/AnimatedBlurBackground";
 
 export default function Error() {
   const reload = () => {
-    window.location.reload();
+    if (typeof window !== 'undefined') {
+      const count = parseInt(sessionStorage.getItem('error_retry_count') || '0', 10);
+      if (count >= 3) {
+        alert('Multiple errors occurred. Please try returning home or contacting support.');
+        return;
+      }
+      sessionStorage.setItem('error_retry_count', (count + 1).toString());
+      window.location.reload();
+    }
   };
 
   return (
@@ -64,7 +72,7 @@ export default function Error() {
 
           {/* Easter Egg Text */}
           <p className="mt-8 text-sm text-gray-400 animate-pulse">
-            Don't worry, even the best games crashes somethimes...
+            Don&apos;t worry, even the best games crash sometimes...
           </p>
         </div>
       </div>

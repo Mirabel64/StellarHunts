@@ -1,6 +1,13 @@
 # Dependabot configuration — automated dependency updates
 # See https://docs.github.com/en/code-security/dependabot/dependabot-version-updates
 # for all config options.
+#
+# Issue #772: Added Docker ecosystem scanning so that base-image vulnerabilities
+# are caught and patched automatically, completing the coverage matrix:
+#   npm (root / frontend / backend)  ✓
+#   cargo (onchain Rust)              ✓
+#   docker (Dockerfiles)              ✓  ← added
+#   github-actions (CI workflows)     ✓
 
 version: 2
 updates:
@@ -18,7 +25,7 @@ updates:
     labels:
       - "dependencies"
       - "npm"
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 5
     versioning-strategy: auto
     groups:
       nestjs:
@@ -51,7 +58,7 @@ updates:
     labels:
       - "dependencies"
       - "frontend"
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 5
     versioning-strategy: auto
     ignore:
       # Next.js v15 is a breaking change; handle manually
@@ -85,7 +92,7 @@ updates:
     labels:
       - "dependencies"
       - "backend"
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 5
     versioning-strategy: auto
     groups:
       nestjs:
@@ -116,7 +123,7 @@ updates:
       - "dependencies"
       - "onchain"
       - "rust"
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 3
     groups:
       soroban:
         patterns:
@@ -124,6 +131,25 @@ updates:
         update-types:
           - "minor"
           - "patch"
+
+  # ── Docker (base image updates) ─────────────────────────────────
+  # Scanning Dockerfiles ensures base images (node:*, postgres:*, etc.)
+  # receive security patches automatically. Dependabot will open a PR
+  # whenever a newer digest is available for the pinned base image tag.
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "UTC"
+    commit-message:
+      prefix: "chore(deps/docker)"
+    labels:
+      - "dependencies"
+      - "docker"
+      - "security"
+    open-pull-requests-limit: 3
 
   # ── GitHub Actions (self-update) ────────────────────────────────
   - package-ecosystem: "github-actions"

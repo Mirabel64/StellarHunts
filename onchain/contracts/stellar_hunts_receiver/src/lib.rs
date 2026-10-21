@@ -7,6 +7,15 @@
 
 use soroban_sdk::{contract, contractimpl, Env, Symbol};
 
+#[cfg(test)]
+use stellar_hunts_nft::{StellarHuntsNft, StellarHuntsNftClient};
+
+#[cfg(test)]
+use stellar_hunts_types::Levels;
+
+#[cfg(test)]
+use soroban_sdk::testutils::Address as _;
+
 #[contract]
 pub struct MockReceiver;
 

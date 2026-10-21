@@ -1,7 +1,7 @@
 # ADR-0001: Record Architecture Decisions
 
-**Date:** 2025-07-24  
-**Status:** Accepted  
+**Date:** 2025-07-24
+**Status:** Accepted
 **Deciders:** StellarHunts core team
 
 ---
@@ -35,8 +35,8 @@ creating a new ADR and updating the old one's status field.
 ```
 # ADR-NNNN: <Title>
 
-**Date:** YYYY-MM-DD  
-**Status:** Proposed | Accepted | Deprecated | Superseded by ADR-XXXX  
+**Date:** YYYY-MM-DD
+**Status:** Proposed | Accepted | Deprecated | Superseded by ADR-XXXX
 **Deciders:** <team or individuals>
 
 ---

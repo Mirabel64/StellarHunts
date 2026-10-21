@@ -84,4 +84,4 @@ const ReviewStats = ({ stats, loading }) => {
   );
 };
 
-export default ReviewStats; 
+export default ReviewStats;

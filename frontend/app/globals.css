@@ -12,11 +12,86 @@ body {
   }
 }
 
+@layer utilities {
+  @keyframes shimmer {
+    0% {
+      transform: translateX(-100%);
+    }
+    100% {
+      transform: translateX(100%);
+    }
+  }
+  .animate-shimmer {
+    animation: shimmer 2s ease-in-out infinite;
+  }
+}
+
 @layer base {
   :root {
     --radius: 0.5rem;
     --brand-purple: 139 92 246;
     --brand-pink: 236 72 153;
     --brand-dark: 9 9 11;
+  }
+
+  /* ── Keyboard focus visibility (#324) ─────────────────────
+     Baseline visible focus indicator for every interactive
+     element, so a keyboard user can always see where they are.
+     Components that define their own focus ring (Tailwind
+     `focus-visible:ring-*` in the utilities layer) override
+     this with their more specific styling. `:focus-visible`
+     (not `:focus`) means mouse/pointer clicks do NOT flash a
+     ring, only keyboard navigation. High-contrast brand-purple
+     ring with clear offset works on both light and dark themes.
+     ──────────────────────────────────────────────────────── */
+  :focus-visible {
+    outline: 2px solid var(--focus-ring, rgb(var(--brand-purple) / 0.9));
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+}
+
+/* ── Reduced-motion support ─────────────────────────────────
+   Respect the user's prefers-reduced-motion media query.
+   Disables non-essential motion for users who have indicated
+   they prefer reduced movement.
+   ──────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  /* Disable specific utility animations */
+  .animate-shimmer {
+    animation: none !important;
+  }
+
+  .animate-pulse {
+    animation: none !important;
+  }
+
+  .animate-spin {
+    animation: none !important;
+  }
+
+  .animate-bounce {
+    animation: none !important;
+  }
+
+  .animate-gradient {
+    animation: none !important;
+  }
+
+  /* Keep essential transitions for interactivity (hover/focus) */
+  .hover\\:scale-105,
+  .hover\\:scale-110,
+  .group-hover\\:translate-x-0.5,
+  .group-hover\\:scale-110 {
+    transition-duration: 0.01ms !important;
   }
 }

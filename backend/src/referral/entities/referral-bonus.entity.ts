@@ -1,5 +1,5 @@
 import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, CreateDateColumn, JoinColumn, Index } from "typeorm"
-import { User } from "../../user/entities/user.entity" // Adjust path as needed
+import { User } from '../../auth/entities/user.entity';
 import { ReferralInvite } from "./referral-invite.entity"
 
 export enum BonusType {
@@ -17,11 +17,12 @@ export enum BonusStatus {
 @Entity("referral_bonuses")
 @Index(["userId"])
 @Index(["referralInviteId"])
+@Index(["referralInviteId", "type"], { unique: true })
 export class ReferralBonus {
   @PrimaryGeneratedColumn("uuid")
   id: string
 
-  @Column({ type: "uuid" })
+  @Column({ type: "uuid", length: 128 })
   userId: string
 
   @ManyToOne(() => User, { onDelete: "CASCADE" })
