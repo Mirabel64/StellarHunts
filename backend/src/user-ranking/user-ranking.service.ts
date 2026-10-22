@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { UserRank } from './entities/user-ranking.entity';
-import { UserRankDto } from './dto/create-user-ranking.dto';
+import { CreateUserRankingDto } from './dto/create-user-ranking.dto';
 
 @Injectable()
 export class UserRankingService {
@@ -48,7 +48,7 @@ export class UserRankingService {
     return this.userRankRepository.findOne({ where: { userId } });
   }
 
-  async getUserRank(userId: string): Promise<UserRankDto> {
+  async getUserRank(userId: string): Promise<CreateUserRankingDto> {
     let userRank = await this.userRankRepository.findOne({ where: { userId } });
 
     if (!userRank) {

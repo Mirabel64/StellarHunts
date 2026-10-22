@@ -2,12 +2,13 @@ import { IsBoolean, IsString, IsOptional, IsArray, IsUUID, IsDateString } from "
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger"
 
 export class UpdateMaintenanceConfigDto {
-  @ApiProperty({
+  @ApiPropertyOptional({
     description: "Enable or disable maintenance mode",
     example: true,
   })
   @IsBoolean()
-  isMaintenanceMode: boolean
+  @IsOptional()
+  isMaintenanceMode?: boolean
 
   @ApiPropertyOptional({
     description: "Message to display during maintenance",

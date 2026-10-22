@@ -5,7 +5,7 @@ import type { JwtVerificationOptions } from "../interfaces/token.interface"
 
 export const JWT_OPTIONS_KEY = "jwt_options"
 export const JwtOptions = (options: JwtVerificationOptions) =>
-  Reflector.createDecorator<JwtVerificationOptions>({ key: JWT_OPTIONS_KEY, value: options })
+  Reflector.createDecorator<JwtVerificationOptions>({ key: JWT_OPTIONS_KEY })
 
 @Injectable()
 export class JwtGuard implements CanActivate {

@@ -1,6 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 
-export class UserRankDto {
+export class CreateUserRankingDto {
   @ApiProperty()
   userId: string;
 
@@ -16,3 +16,4 @@ export class UserRankDto {
   @ApiProperty()
   rank: number;
 }
+export type UserRankDto = CreateUserRankingDto

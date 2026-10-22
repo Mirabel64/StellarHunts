@@ -1,7 +1,7 @@
 import { Entity, PrimaryGeneratedColumn, Column, OneToMany, CreateDateColumn } from 'typeorm';
 import { Inventory } from './inventory';
 
-@Entity('badges')
+@Entity('user_inventory_badges')
 export class Badge {
   @PrimaryGeneratedColumn('uuid')
   id: string;

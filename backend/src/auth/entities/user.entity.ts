@@ -6,9 +6,11 @@ import {
   UpdateDateColumn,
   BeforeInsert,
   BeforeUpdate,
+  OneToMany,
 } from "typeorm"
 import { Exclude } from "class-transformer"
 import * as bcrypt from "bcrypt"
+import { Activity } from "../../activity/entities/activity.entity"
 
 @Entity("users")
 export class User {
@@ -40,7 +42,6 @@ export class User {
   @UpdateDateColumn()
   updatedAt: Date
 
-
   @BeforeInsert()
   async hashPasswordBeforeInsert() {
     if (this.password) {
@@ -66,4 +67,7 @@ export class User {
       return false
     }
   }
+
+  @OneToMany(() => Activity, activity => activity.user)
+  activities: Activity[]
 }

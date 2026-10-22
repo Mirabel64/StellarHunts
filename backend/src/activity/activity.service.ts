@@ -47,7 +47,7 @@ export class ActivityService {
   }
 
   async logActivity(userId: string, type: string, metadata: Record<string, any> = {}) {
-    const activity = this.activityRepo.create({ user: { id: userId }, type, metadata });
+    const activity = this.activityRepo.create({ user: { id: userId } as any, type, metadata } as any);
     return this.activityRepo.save(activity);
   }
 }

@@ -113,11 +113,11 @@ export class ChallengeService {
     tomorrow.setDate(tomorrow.getDate() + 1)
 
     return this.challengeRepository.findOne({
-      where: {
-        status: ChallengeStatus.ACTIVE,
-        unlockTime: MoreThan(today),
-        unlockTime: LessThan(tomorrow),
-      },
+      where: [
+        { status: ChallengeStatus.ACTIVE },
+        { unlockTime: MoreThan(today) },
+        { unlockTime: LessThan(tomorrow) },
+      ],
     })
   }
 
@@ -130,12 +130,12 @@ export class ChallengeService {
     endOfWeek.setDate(endOfWeek.getDate() + 7)
 
     return this.challengeRepository.findOne({
-      where: {
-        status: ChallengeStatus.ACTIVE,
-        unlockTime: MoreThan(startOfWeek),
-        unlockTime: LessThan(endOfWeek),
-        metadata: { type: "weekly" },
-      },
+      where: [
+        { status: ChallengeStatus.ACTIVE },
+        { unlockTime: MoreThan(startOfWeek) },
+        { unlockTime: LessThan(endOfWeek) },
+        { metadata: { type: "weekly" } },
+      ],
     })
   }
 }

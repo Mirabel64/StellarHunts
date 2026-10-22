@@ -1,4 +1,5 @@
 import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, ManyToOne } from 'typeorm';
+import { User } from '../../auth/entities/user.entity';
 
 export enum ActivityType {
   LOGIN = 'LOGIN',

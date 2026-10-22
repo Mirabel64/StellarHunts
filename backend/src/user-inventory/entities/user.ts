@@ -2,7 +2,7 @@ import { Entity, PrimaryGeneratedColumn, Column, OneToMany, CreateDateColumn, Up
 import { Inventory } from './inventory';
 import { TimeTrial } from 'src/time-trial/time-trial.entity';
 
-@Entity('users')
+@Entity('user_inventory_users')
 export class User {
   @PrimaryGeneratedColumn('uuid')
   id: string;

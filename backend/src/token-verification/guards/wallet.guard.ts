@@ -12,7 +12,7 @@ import type { WalletVerificationOptions, WalletTokenPayload } from "../interface
 
 export const WALLET_OPTIONS_KEY = "wallet_options"
 export const WalletOptions = (options: WalletVerificationOptions) =>
-  Reflector.createDecorator<WalletVerificationOptions>({ key: WALLET_OPTIONS_KEY, value: options })
+  Reflector.createDecorator<WalletVerificationOptions>({ key: WALLET_OPTIONS_KEY })
 
 @Injectable()
 export class WalletGuard implements CanActivate {

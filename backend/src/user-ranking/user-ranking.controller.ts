@@ -1,6 +1,6 @@
 import { Controller, Get, Param } from '@nestjs/common';
 import { UserRankingService } from './user-ranking.service';
-import { UserRankDto } from './dto/create-user-ranking.dto';
+import { CreateUserRankingDto } from './dto/create-user-ranking.dto';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 
 @ApiTags('User Ranking')
@@ -10,9 +10,9 @@ export class UserRankingController {
 
   @Get(':id/rank')
   @ApiOperation({ summary: 'Get user rank' })
-  @ApiResponse({ status: 200, description: 'Returns user rank data', type: UserRankDto })
+  @ApiResponse({ status: 200, description: 'Returns user rank data', type: CreateUserRankingDto })
   @ApiResponse({ status: 404, description: 'User not found' })
-  async getUserRank(@Param('id') userId: string): Promise<UserRankDto> {
+  async getUserRank(@Param('id') userId: string): Promise<CreateUserRankingDto> {
     return this.userRankingService.getUserRank(userId);
   }
 }

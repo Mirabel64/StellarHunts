@@ -6,5 +6,4 @@ export { AdminGuard } from "./guards/admin.guard"
 export { TokenHistory, TokenType, TokenStatus } from "./entities/token-history.entity"
 
 // Interface and DTO exports
-export * from "./interfaces/token-history.interface"
-export * from "./dto/token-history.dto"
+

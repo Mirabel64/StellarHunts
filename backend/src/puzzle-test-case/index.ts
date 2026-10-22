@@ -9,5 +9,4 @@ export { PuzzleTestCase, TestCaseType, ValidationMode } from "./entities/puzzle-
 export { ValidationResult, ValidationStatus } from "./entities/validation-result.entity"
 
 // Interface and DTO exports
-export * from "./interfaces/test-case.interface"
-export * from "./dto/test-case.dto"
+
