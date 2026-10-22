@@ -151,11 +151,11 @@ export default function InviteFriendsPage() {
             </h3>
             <p className="text-gray-300 mb-6 max-w-2xl mx-auto">
               Invite your friends to join StellarHunts and unlock exclusive rewards together. 
-              The more friends you invite, the more rewards you'll earn!
+              The more friends you invite, the more rewards youyou'll earnapos;ll earn!
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
               <Button
-                onClick={shareReferral}
+                onClick={()=>alert("Share functionality coming soon!")}
                 className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600"
               >
                 <Share2 className="w-4 h-4 mr-2" />
