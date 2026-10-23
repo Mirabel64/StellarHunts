@@ -1,0 +1,6 @@
+export enum ActivityType {
+  LOGIN = 'LOGIN',
+  LOGOUT = 'LOGOUT',
+  PUZZLE_ATTEMPT = 'PUZZLE_ATTEMPT',
+  PUZZLE_COMPLETED = 'PUZZLE_COMPLETED',
+}

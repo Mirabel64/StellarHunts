@@ -1,0 +1,26 @@
+# Pre-commit hooks for StellarHunts
+# Install: pre-commit install
+# Run manually: pre-commit run --all-files
+
+repos:
+  # Gitleaks - detect secrets before they're committed
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks
+        args: ['--redact', '--no-banner', '--exit-code=1']
+
+  # General pre-commit hooks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-json
+      - id: check-toml
+      - id: check-added-large-files
+        args: ['--maxkb=1000']
+      - id: detect-private-key
+      - id: mixed-line-ending
+        args: ['--fix=lf']

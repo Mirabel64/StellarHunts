@@ -1,43 +1,57 @@
-import { ApiProperty } from "@nestjs/swagger"
+// Response-only DTO (issue #529): this shape is never bound as a @Body()
+// request type, so it carries no class-validator decorators by design.
+import { ApiProperty } from '@nestjs/swagger';
 
 // Step 1: Create a nested DTO for the user
 export class UserDto {
   @ApiProperty()
-  id: string
+  id: string;
 
   @ApiProperty()
-  name: string
+  name: string;
 
   @ApiProperty()
-  email: string
+  email: string;
 
   @ApiProperty()
-  createdAt: Date
+  createdAt: Date;
 }
 
 // Step 2: Use UserDto in your response
 export class AuthResponseDto {
   @ApiProperty({
-    description: "JWT access token",
-    example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    description: 'JWT access token',
+    example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
   })
-  accessToken: string
+  accessToken: string;
 
   @ApiProperty({
-    description: "Token type",
-    example: "Bearer",
+    description: 'JWT refresh token used to obtain a new access token',
+    example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
   })
-  tokenType: string
+  refreshToken: string;
 
   @ApiProperty({
-    description: "Token expiration time in seconds",
+    description: 'Token type',
+    example: 'Bearer',
+  })
+  tokenType: string;
+
+  @ApiProperty({
+    description: 'Access token expiration time in seconds',
     example: 900,
   })
-  expiresIn: number
+  expiresIn: number;
 
   @ApiProperty({
-    description: "User information",
+    description: 'Refresh token expiration time in seconds',
+    example: 2592000,
+  })
+  refreshExpiresIn?: number;
+
+  @ApiProperty({
+    description: 'User information',
     type: () => UserDto,
   })
-  user: UserDto
+  user: UserDto;
 }

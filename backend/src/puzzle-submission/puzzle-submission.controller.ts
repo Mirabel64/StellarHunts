@@ -1,7 +1,7 @@
 import { Controller, Post, Body, UseGuards } from '@nestjs/common';
 import { PuzzleSubmissionService } from './puzzle-submission.service';
-import { RateLimit } from 'src/rate-limiter/rate-limit.decorator';
-import { RateLimitGuard } from 'src/rate-limiter/rate-limit.guard';
+import { RateLimit } from '../rate-limiter/rate-limit.decorator';
+import { RateLimitGuard } from '../rate-limiter/rate-limit.guard';
 
 @Controller('puzzle-submission')
 export class PuzzleSubmissionController {
@@ -16,15 +16,13 @@ export class PuzzleSubmissionController {
       playerId: string;
       puzzleId: string;
       answer: string;
-      correctAnswer: string;
     },
   ) {
-    const { playerId, puzzleId, answer, correctAnswer } = body;
+    const { playerId, puzzleId, answer } = body;
     const result = await this.submissionService.submitAnswer(
       playerId,
       puzzleId,
       answer,
-      correctAnswer,
     );
     return result;
   }

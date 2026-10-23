@@ -1,6 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
 import { PuzzleCategoryService } from './puzzle-category.service';
 import { Category } from './entities/category.entity';
 import { CategoryPuzzle as Puzzle } from './entities/puzzle.entity';
@@ -8,17 +7,6 @@ import { NotFoundException } from '@nestjs/common';
 
 describe('PuzzleCategoryService', () => {
   let service: PuzzleCategoryService;
-  let categoryRepository: Repository<Category>;
-  let puzzleRepository: Repository<Puzzle>;
-
-  const categoryQueryBuilder = {
-    leftJoinAndSelect: jest.fn().mockReturnThis(),
-    where: jest.fn().mockReturnThis(),
-    andWhere: jest.fn().mockReturnThis(),
-    orderBy: jest.fn().mockReturnThis(),
-    addOrderBy: jest.fn().mockReturnThis(),
-    getMany: jest.fn().mockResolvedValue([]),
-  };
 
   const mockCategoryRepository = {
     createQueryBuilder: jest.fn(() => categoryQueryBuilder),
@@ -35,16 +23,11 @@ describe('PuzzleCategoryService', () => {
     findOne: jest.fn(),
     create: jest.fn(),
     save: jest.fn(),
-    createQueryBuilder: jest.fn(() => ({
-      leftJoinAndSelect: jest.fn().mockReturnThis(),
-      where: jest.fn().mockReturnThis(),
-      andWhere: jest.fn().mockReturnThis(),
-      orderBy: jest.fn().mockReturnThis(),
-      getMany: jest.fn().mockResolvedValue([]),
-    })),
+    createQueryBuilder: jest.fn(() => puzzleQueryBuilder),
   };
 
   beforeEach(async () => {
+    jest.clearAllMocks();
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         PuzzleCategoryService,
@@ -60,12 +43,6 @@ describe('PuzzleCategoryService', () => {
     }).compile();
 
     service = module.get<PuzzleCategoryService>(PuzzleCategoryService);
-    categoryRepository = module.get<Repository<Category>>(getRepositoryToken(Category));
-    puzzleRepository = module.get<Repository<Puzzle>>(getRepositoryToken(Puzzle));
-  });
-
-  afterEach(() => {
-    jest.clearAllMocks();
   });
 
   it('should be defined', () => {
@@ -99,7 +76,14 @@ describe('PuzzleCategoryService', () => {
         },
       ];
 
-      mockCategoryRepository.createQueryBuilder().getMany.mockResolvedValue(mockCategories);
+      mockCategoryRepository.createQueryBuilder.mockReturnValueOnce({
+        leftJoinAndSelect: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        addOrderBy: jest.fn().mockReturnThis(),
+        getMany: jest.fn().mockResolvedValue(mockCategories),
+      });
 
       const result = await service.getPuzzlesByCategory();
 
@@ -160,7 +144,9 @@ describe('PuzzleCategoryService', () => {
     it('should throw NotFoundException when category not found', async () => {
       mockCategoryRepository.findOne.mockResolvedValue(null);
 
-      await expect(service.getCategoryById('999')).rejects.toThrow(NotFoundException);
+      await expect(service.getCategoryById('999')).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 
@@ -179,7 +165,9 @@ describe('PuzzleCategoryService', () => {
       const result = await service.createCategory(createCategoryDto);
 
       expect(result).toEqual(mockCategory);
-      expect(mockCategoryRepository.create).toHaveBeenCalledWith(createCategoryDto);
+      expect(mockCategoryRepository.create).toHaveBeenCalledWith(
+        createCategoryDto,
+      );
       expect(mockCategoryRepository.save).toHaveBeenCalledWith(mockCategory);
     });
   });
@@ -218,8 +206,8 @@ describe('PuzzleCategoryService', () => {
       };
 
       const mockCategories = [
-        { id: '1', name: 'Category 1' },
-        { id: '2', name: 'Category 2' },
+        { id: 1, name: 'Category 1' },
+        { id: 2, name: 'Category 2' },
       ];
 
       const mockPuzzle = {
@@ -259,4 +247,4 @@ describe('PuzzleCategoryService', () => {
       expect(mockCategoryRepository.save).not.toHaveBeenCalled();
     });
   });
-}); 
+});

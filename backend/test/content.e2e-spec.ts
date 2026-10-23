@@ -222,4 +222,4 @@ describe('ContentController (e2e)', () => {
         });
     });
   });
-}); 
+});

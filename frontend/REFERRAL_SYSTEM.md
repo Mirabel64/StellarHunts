@@ -45,7 +45,7 @@ The referral system encourages users to invite friends to join StellarHunts. Use
 ### 4. Custom Hook (`useReferral`)
 - **State Management**: Handles referral data and loading states
 - **API Integration**: Fetches and updates referral information
-- **Utility Functions**: 
+- **Utility Functions**:
   - `generateReferralLink()`: Creates unique referral URLs
   - `trackReferral()`: Records new referrals
   - `getRewardTier()`: Determines reward tier based on invite count
@@ -53,22 +53,33 @@ The referral system encourages users to invite friends to join StellarHunts. Use
   - `shareReferral()`: Native sharing with fallback
   - `copyReferralLink()`: Clipboard functionality
 
-## API Routes
+## API Routes & Attribution Flow
 
-### `GET /api/referrals/[userId]`
-- Fetches referral statistics and invited users list
-- Returns mock data (to be connected to backend)
+All referral data originates from the backend service (`backend/src/referral/`).
+No hardcoded mock data is served by any route handler (issue #497).
 
-### `POST /api/referrals/track`
-- Tracks new referrals when users sign up
-- Awards bonuses to both referrer and new user
-- Updates referral statistics
+### `GET /api/v1/referrals/:userId` (backend)
+- The authoritative data source. Returns real referral statistics and invited
+  users from the database.
+
+### `POST /api/v1/referrals/track` (backend)
+- Records referral attribution. Authentication is required; unauthenticated
+  attempts return `401`.
+
+### Next.js route handlers (`frontend/app/api/referrals/`)
+
+`GET /api/referrals/[userId]` — thin proxy to the backend. Kept for
+compatibility; prefer calling `apiClient.get("/referrals/:id")` directly.
+
+`POST /api/referrals/track` — authenticated proxy forwarding attribution
+writes to the backend. The backend identifies the invited user from the JWT
+principal, not from the request body, preventing spoofed attributions.
 
 ## Reward System
 
 ### Referrer Rewards
 - **5 invites**: Rare NFT
-- **10 invites**: Epic NFT  
+- **10 invites**: Epic NFT
 - **25 invites**: Legendary NFT
 - **50 invites**: Mythic NFT
 - **Per referral**: 50 XP bonus
@@ -110,7 +121,6 @@ The "Invite Friends" link has been added to the main navigation bar, making it e
 - Smooth animations and transitions
 
 ### Future Enhancements
-- Backend integration for real data
 - Social media sharing integration
 - Advanced analytics and tracking
 - Gamification elements (leaderboards, challenges)
@@ -138,4 +148,4 @@ frontend/
 └── REFERRAL_SYSTEM.md
 ```
 
-This implementation provides a complete referral system that encourages user growth while rewarding both referrers and new users with exclusive bonuses and NFTs. 
+This implementation provides a complete referral system that encourages user growth while rewarding both referrers and new users with exclusive bonuses and NFTs.

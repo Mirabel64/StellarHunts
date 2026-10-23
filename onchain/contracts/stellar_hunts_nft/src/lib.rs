@@ -3,6 +3,9 @@
 // remains `no_std` for the WASM build.
 #![cfg_attr(not(test), no_std)]
 
+extern crate alloc;
+
+use alloc::string::ToString;
 use soroban_sdk::{
     contract, contracterror, contractimpl, contracttype, panic_with_error, Address, Env, String,
     Symbol,
@@ -21,11 +24,36 @@ pub use stellar_hunts_types::Levels;
 #[derive(Clone)]
 pub enum NftDataKey {
     Admin,
+    PendingAdmin,
+    Paused,
     Minters(Address),
     Badge(Address, Levels),
+    BadgeData(Address, Levels),
     BaseUri,
     Name,
     Symbol,
+    /// Schema version written at `init`. A missing key means version `0`
+    /// (a deployment that predates versioning) — see
+    /// `onchain/docs/storage-versioning.md` and issue #453.
+    SchemaVersion,
+    PuzzleReward(Address, u64),
+    PuzzleMetadata(Address, u64),
+}
+
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct BadgeData {
+    pub minted_at: u64,
+    pub minter: Address,
+}
+
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct PuzzleRewardMetadata {
+    pub puzzle_name: String,
+    pub difficulty: String,
+    pub completion_timestamp: u64,
+    pub minter: Address,
 }
 
 // ---------------------------------------------------------------------
@@ -39,7 +67,23 @@ pub enum Error {
     NotAuthorized = 1,
     AlreadyHasBadge = 2,
     AlreadyInitialized = 3,
+    InvalidBaseUri = 4,
+    MetadataTooLarge = 5,
+    NotInitialized = 6,
+    ContractPaused = 7,
+    DuplicateCompletion = 8,
 }
+
+const MAX_BASE_URI_LEN: usize = 200;
+const MAX_NAME_LEN: usize = 64;
+const MAX_SYMBOL_LEN: usize = 16;
+
+/// Current storage schema version for the NFT contract (#453).
+///
+/// An instance initialized before versioning existed reports `0` from
+/// `get_schema_version()`, so off-chain tooling can detect pre-versioning
+/// state without requiring a re-`init`.
+const CURRENT_SCHEMA_VERSION: u32 = 1;
 
 // ---------------------------------------------------------------------
 // Contract
@@ -64,7 +108,28 @@ impl StellarHuntsNft {
         }
         admin.require_auth();
 
+        let base_uri_text = base_uri.to_string();
+        let name_text = name.to_string();
+        let symbol_text = symbol.to_string();
+
+        if base_uri_text.len() > MAX_BASE_URI_LEN
+            || (!base_uri_text.starts_with("ipfs://") && !base_uri_text.starts_with("https://"))
+        {
+            panic_with_error!(&env, Error::InvalidBaseUri);
+        }
+
+        if name_text.is_empty()
+            || symbol_text.is_empty()
+            || name_text.len() > MAX_NAME_LEN
+            || symbol_text.len() > MAX_SYMBOL_LEN
+        {
+            panic_with_error!(&env, Error::MetadataTooLarge);
+        }
+
         env.storage().instance().set(&NftDataKey::Admin, &admin);
+        env.storage()
+            .instance()
+            .set(&NftDataKey::SchemaVersion, &CURRENT_SCHEMA_VERSION);
         env.storage()
             .instance()
             .set(&NftDataKey::Minters(game_contract.clone()), &true);
@@ -80,6 +145,56 @@ impl StellarHuntsNft {
         );
     }
 
+    /// Storage schema version of this deployment (#453).
+    ///
+    /// Returns `CURRENT_SCHEMA_VERSION` after `init`; a legacy instance that
+    /// never wrote the key reports `0`.
+    pub fn get_schema_version(env: Env) -> u32 {
+        env.storage()
+            .instance()
+            .get(&NftDataKey::SchemaVersion)
+            .unwrap_or(0)
+    }
+
+    pub fn propose_admin(env: Env, new_admin: Address) {
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&NftDataKey::Admin)
+            .unwrap_or_else(|| panic_with_error!(&env, Error::NotInitialized));
+        admin.require_auth();
+        env.storage()
+            .instance()
+            .set(&NftDataKey::PendingAdmin, &new_admin);
+        env.events().publish(
+            (Symbol::new(&env, "admin_transfer_proposed"),),
+            (admin, new_admin),
+        );
+    }
+
+    pub fn accept_admin(env: Env) {
+        let pending_admin: Address = env
+            .storage()
+            .instance()
+            .get(&NftDataKey::PendingAdmin)
+            .unwrap_or_else(|| panic_with_error!(&env, Error::NotAuthorized));
+        pending_admin.require_auth();
+
+        let previous_admin: Address = env
+            .storage()
+            .instance()
+            .get(&NftDataKey::Admin)
+            .unwrap_or_else(|| panic_with_error!(&env, Error::NotInitialized));
+        env.storage()
+            .instance()
+            .set(&NftDataKey::Admin, &pending_admin);
+        env.storage().instance().remove(&NftDataKey::PendingAdmin);
+        env.events().publish(
+            (Symbol::new(&env, "admin_transfer_accepted"),),
+            (previous_admin, pending_admin),
+        );
+    }
+
     /// Mint a single level badge for a recipient.
     ///
     /// `minter` must be a registered minter (set via `init` or
@@ -88,11 +203,59 @@ impl StellarHuntsNft {
     /// authorises the mint. This is the v22 replacement for the previous
     /// `env.invoker()`-based check: in normal operation the StellarHunts
     /// game contract passes its own contract address as `minter`.
+    pub fn pause(env: Env) {
+        let admin: Address = env.storage().instance().get(&NftDataKey::Admin).unwrap();
+        admin.require_auth();
+        env.storage().instance().set(&NftDataKey::Paused, &true);
+        env.events().publish(
+            (Symbol::new(&env, "nft_contract_paused"),),
+            (admin,),
+        );
+    }
+
+    pub fn unpause(env: Env) {
+        let admin: Address = env.storage().instance().get(&NftDataKey::Admin).unwrap();
+        admin.require_auth();
+        env.storage().instance().set(&NftDataKey::Paused, &false);
+        env.events().publish(
+            (Symbol::new(&env, "nft_contract_unpaused"),),
+            (admin,),
+        );
+    }
+
+    pub fn is_paused(env: Env) -> bool {
+        env.storage()
+            .instance()
+            .get(&NftDataKey::Paused)
+            .unwrap_or(false)
+    }
+
     pub fn mint_level_badge(env: Env, minter: Address, recipient: Address, level: Levels) {
         minter.require_auth();
+        if env
+            .storage()
+            .instance()
+            .get(&NftDataKey::Paused)
+            .unwrap_or(false)
+        {
+            panic_with_error!(&env, Error::ContractPaused);
+        }
+
         if !Self::has_minter_role(env.clone(), minter.clone()) {
             panic_with_error!(&env, Error::NotAuthorized);
         }
+
+        // Resolve the admin up front so a misconfigured (uninitialized)
+        // NFT contract surfaces a structured `NotInitialized` error before
+        // any badge state is written. Reading it here also ensures the
+        // badge/badge_data writes below can never be left as a partial
+        // state change if the contract was never configured.
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&NftDataKey::Admin)
+            .ok_or(Error::NotInitialized)
+            .unwrap();
 
         let badge_key = NftDataKey::Badge(recipient.clone(), level.clone());
         if env.storage().persistent().has(&badge_key) {
@@ -100,9 +263,16 @@ impl StellarHuntsNft {
         }
         env.storage().persistent().set(&badge_key, &true);
 
+        let badge_data = BadgeData {
+            minted_at: env.ledger().timestamp(),
+            minter: minter.clone(),
+        };
+        let badge_data_key = NftDataKey::BadgeData(recipient.clone(), level.clone());
+        env.storage().persistent().set(&badge_data_key, &badge_data);
+
         env.events().publish(
             (Symbol::new(&env, "level_badge_minted"),),
-            (recipient, level, minter),
+            (recipient, level, minter, admin),
         );
     }
 
@@ -110,6 +280,76 @@ impl StellarHuntsNft {
         env.storage()
             .persistent()
             .has(&NftDataKey::Badge(owner, level))
+    }
+
+    pub fn get_badge_data(env: Env, owner: Address, level: Levels) -> Option<BadgeData> {
+        let key = NftDataKey::BadgeData(owner, level);
+        env.storage().persistent().get(&key)
+    }
+
+    /// Mint a reward NFT when a puzzle is solved (issue #671).
+    ///
+    /// Only an authorized minter (the game/hunter contract) may call this,
+    /// enforced by `minter.require_auth()` and `has_minter_role(minter)`.
+    /// Records puzzle metadata (name, difficulty, timestamp, minter).
+    /// Rejects duplicate completions with `Error::DuplicateCompletion`.
+    pub fn mint_puzzle_reward_nft(
+        env: Env,
+        minter: Address,
+        recipient: Address,
+        puzzle_id: u64,
+        puzzle_name: String,
+        difficulty: String,
+    ) {
+        minter.require_auth();
+        if env
+            .storage()
+            .instance()
+            .get(&NftDataKey::Paused)
+            .unwrap_or(false)
+        {
+            panic_with_error!(&env, Error::ContractPaused);
+        }
+
+        if !Self::has_minter_role(env.clone(), minter.clone()) {
+            panic_with_error!(&env, Error::NotAuthorized);
+        }
+
+        let reward_key = NftDataKey::PuzzleReward(recipient.clone(), puzzle_id);
+        if env.storage().persistent().has(&reward_key) {
+            panic_with_error!(&env, Error::DuplicateCompletion);
+        }
+        env.storage().persistent().set(&reward_key, &true);
+
+        let metadata = PuzzleRewardMetadata {
+            puzzle_name: puzzle_name.clone(),
+            difficulty: difficulty.clone(),
+            completion_timestamp: env.ledger().timestamp(),
+            minter: minter.clone(),
+        };
+        let meta_key = NftDataKey::PuzzleMetadata(recipient.clone(), puzzle_id);
+        env.storage().persistent().set(&meta_key, &metadata);
+
+        env.events().publish(
+            (Symbol::new(&env, "puzzle_reward_minted"),),
+            (recipient, puzzle_id, puzzle_name, difficulty),
+        );
+    }
+
+    pub fn has_puzzle_reward(env: Env, recipient: Address, puzzle_id: u64) -> bool {
+        env.storage()
+            .persistent()
+            .has(&NftDataKey::PuzzleReward(recipient, puzzle_id))
+    }
+
+    pub fn get_puzzle_metadata(
+        env: Env,
+        recipient: Address,
+        puzzle_id: u64,
+    ) -> Option<PuzzleRewardMetadata> {
+        env.storage()
+            .persistent()
+            .get(&NftDataKey::PuzzleMetadata(recipient, puzzle_id))
     }
 
     // -----------------------------------------------------------------
@@ -121,12 +361,16 @@ impl StellarHuntsNft {
             .storage()
             .instance()
             .get(&NftDataKey::Admin)
-            .expect("admin not set");
+            .unwrap_or_else(|| panic_with_error!(&env, Error::NotInitialized));
         admin.require_auth();
 
         env.storage()
             .instance()
-            .set(&NftDataKey::Minters(account), &true);
+            .set(&NftDataKey::Minters(account.clone()), &true);
+        env.events().publish(
+            (Symbol::new(&env, "minter_role_granted"),),
+            (account,),
+        );
     }
 
     pub fn revoke_minter_role(env: Env, account: Address) {
@@ -134,12 +378,16 @@ impl StellarHuntsNft {
             .storage()
             .instance()
             .get(&NftDataKey::Admin)
-            .expect("admin not set");
+            .unwrap_or_else(|| panic_with_error!(&env, Error::NotInitialized));
         admin.require_auth();
 
         env.storage()
             .instance()
-            .remove(&NftDataKey::Minters(account));
+            .remove(&NftDataKey::Minters(account.clone()));
+        env.events().publish(
+            (Symbol::new(&env, "minter_role_revoked"),),
+            (account,),
+        );
     }
 
     pub fn has_minter_role(env: Env, account: Address) -> bool {

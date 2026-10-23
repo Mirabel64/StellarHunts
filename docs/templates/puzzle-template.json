@@ -1,0 +1,8 @@
+{
+  "title": "Base64 Prefix",
+  "description": "Identify the start of a Base64-encoded Stellar keyword.",
+  "difficulty": "easy",
+  "hint": "Base64 groups input bytes in threes and emits four characters per group.",
+  "solution": "U3RlbG",
+  "isActive": false
+}

@@ -1,7 +1,9 @@
-export default function SearchBar({ value, onChange }) {
+export default function SearchBar({ value, onChange, label = "Search" }) {
   return (
     <input
-      type="text"
+      type="search"
+      name="search"
+      aria-label={label}
       placeholder="Search blog posts..."
       value={value}
       onChange={onChange}

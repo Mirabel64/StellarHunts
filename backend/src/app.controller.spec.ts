@@ -15,7 +15,7 @@ describe('AppController', () => {
   });
 
   describe('root', () => {
-    it('should return the API status message', () => {
+    it('should return "Hello World!"', () => {
       expect(appController.getHello()).toBe('StellarHunts API is running.');
     });
   });

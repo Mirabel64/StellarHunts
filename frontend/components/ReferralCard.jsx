@@ -41,4 +41,4 @@ const ReferralCard = ({ user }) => {
   );
 };
 
-export default ReferralCard; 
+export default ReferralCard;

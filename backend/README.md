@@ -50,27 +50,36 @@ src/
 
 ### Prerequisites
 
-- Node.js 18+
-- npm or yarn
-- PostgreSQL 13+
-- Redis (optional, for caching)
+- **Node.js 18+** (matches the engines expected by `backend/`)
+- **npm** (or yarn / pnpm) — examples below use `npm`
+- **PostgreSQL 13+** — required for the primary data store
+- **Redis (optional)** — recommended for caching and rate limiting
 
-### Installation
+### Install
 
 ```bash
-cd backend
-npm install
+# From the repository root
+make install-backend       # preferred — uses the monorepo Makefile
+# — or —
+cd backend && npm install
 ```
 
-### Configuration
+### Environment Variables (`.env` Contract)
 
-Create a `.env` file in the `backend/` directory:
+All runtime configuration is read from environment variables. The values
+are surfaced via `backend/config/app.config.ts` and
+`backend/config/database.config.ts`.
+
+Create a `.env` file in the `backend/` directory before starting the
+server:
 
 ```env
 # Server
 PORT=3001
 NODE_ENV=development
 FRONTEND_URL=http://localhost:3000
+API_VERSION=v1
+```
 
 # Database
 DATABASE_HOST=localhost
@@ -81,8 +90,11 @@ DATABASE_NAME=stellarshunts
 DATABASE_SYNC=true
 DATABASE_LOAD=true
 
+# Auth (required in production)
+JWT_SECRET=replace-with-a-long-random-string
 # Stellar / Soroban
-STELLAR_MODE=mock
+# Defaults to live; mock is only permitted outside production.
+STELLAR_MODE=live
 STELLAR_NETWORK=testnet
 SOROBAN_RPC_URL=https://soroban-testnet.stellar.org
 STELLAR_HUNTS_CONTRACT_ID=...
@@ -92,22 +104,204 @@ STELLAR_HUNTS_NFT_CONTRACT_ID=...
 API_VERSION=v1
 ```
 
-### Development
+#### Variable Reference
+
+| Variable           | Required | Default                  | Source                       | Purpose                                                        |
+|--------------------|----------|--------------------------|------------------------------|----------------------------------------------------------------|
+| `PORT`             | No       | `3001` (this repo's convention) | runtime / shell flag     | TCP port the HTTP server binds to. The sample `.env` above sets it to 3001. |
+| `NODE_ENV`         | No       | `development`            | `backend/src/main.ts`        | Toggle between dev / test / prod behaviour.                     |
+| `FRONTEND_URL`     | No       | `http://localhost:3000`  | `config/app.config.ts`       | Origin allowed by CORS (`origin` field).                       |
+| `API_VERSION`      | No       | _unset_                  | `config/app.config.ts`       | API versioning prefix used by the NestJS setup.                |
+| `DATABASE_HOST`    | Yes (DB) | `localhost`              | `config/database.config.ts`  | PostgreSQL host.                                               |
+| `DATABASE_PORT`    | No       | `5432`                   | `config/database.config.ts`  | PostgreSQL TCP port.                                           |
+| `DATABASE_USER`    | Yes (DB) | _unset_                  | `config/database.config.ts`  | PostgreSQL username.                                           |
+| `DATABASE_PASSWORD`| Yes (DB) | _unset_                  | `config/database.config.ts`  | PostgreSQL password.                                           |
+| `DATABASE_NAME`    | Yes (DB) | _unset_                  | `config/database.config.ts`  | PostgreSQL database name (default: `stellarshunt`).            |
+| `DATABASE_SYNC`    | No       | `false`                  | `config/database.config.ts`  | Set `true` in dev to auto-sync TypeORM entities (never in prod).|
+| `DATABASE_LOAD`    | No       | `false`                  | `config/database.config.ts`  | Legacy flag; entity auto-loading is now always on (see "Database entity registration" below). |
+| `JWT_SECRET`       | Yes (prod)| _unset_                 | `src/auth/*`                 | HMAC secret for signing JWT access tokens.                     |
+| `STELLAR_MODE`     | No       | `live`                   | `src/app.module.ts` and `src/nft-claim/providers/stellar-handler.service.ts` | `live` or `mock`; mock is rejected in production. |
+| `STELLAR_NETWORK`  | No       | `testnet`               | `src/app.module.ts`         | Stellar network identifier (`testnet` or `pubnet`).            |
+| `STARKNET_MODE`    | No       | _unset_                  | `src/*`                      | `mainnet` / `sepolia` / `devnet` switch for on-chain calls.    |
+
+> The `.env` file is `.gitignore`d — never commit secrets to git.
+
+### Database entity registration
+
+The TypeORM connection uses `autoLoadEntities: true` (see
+`src/app.module.ts`). This means **an entity is only added to the connection
+when a feature module registers it with `TypeOrmModule.forFeature([...])`** —
+there is no hand-maintained `entities: [...]` list to keep in sync. If an
+entity is never registered, the first request that touches its repository
+fails at runtime with an `EntityMetadataNotFoundError`.
+
+Convention for every entity-owning module:
+
+```ts
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { MyEntity } from './entities/my.entity';
+
+@Module({
+  imports: [TypeOrmModule.forFeature([MyEntity])],
+  providers: [MyService],
+  controllers: [MyController],
+})
+export class MyModule {}
+```
+
+Run the audit before opening a PR:
 
 ```bash
-# Start with hot-reload
+npm run audit:entities   # fails if any entity lacks a forFeature registration
+```
+
+Because `autoLoadEntities` only loads registered entities, always use this
+script (or the `entity-registration.spec.ts` unit test) rather than adding
+entity classes to `AppModule` by hand.
+
+## Profile and deployment health APIs
+
+`GET /api/v1/users/:id/profile` returns the public user profile together with
+the user's leaderboard score/rank, puzzle and challenge completion counts,
+and badge inventory. The aggregated response is cached in Redis for 60 seconds
+to keep repeat profile reads low-latency; cache misses are coalesced so
+concurrent requests for the same user share one aggregation.
+
+Deployment probes are available without the versioned API prefix:
+
+| Endpoint | Purpose |
+|----------|---------|
+| `GET /healthz` | Liveness; confirms the process is accepting requests without depending on external services. |
+| `GET /readyz` | Readiness; returns `503` if PostgreSQL, Redis, or the required Stellar RPC dependency is unavailable. |
+
+The existing versioned endpoints `/api/v1/health/live` and
+`/api/v1/health/ready` remain available. In mock Stellar mode, RPC is not
+required for readiness; outside mock mode, an unavailable or unconfigured RPC
+endpoint fails readiness. The backend e2e workflow builds and starts the
+production server and requires both root-level probes to pass before running
+the e2e suite.
+
+### Scripts
+
+| Script               | Command                    | Purpose                                              |
+|----------------------|----------------------------|------------------------------------------------------|
+| `npm run start`      | `nest start`               | Start the backend once.                              |
+| `npm run audit:entities` | `ts-node scripts/audit-entities.ts` | Fail if any entity is not registered via `forFeature`. |
+| `npm run audit:modules`  | `ts-node scripts/audit-modules.ts`  | Report feature modules not imported by `AppModule`. |
+| `npm run start:dev`  | `nest start --watch`       | Start with hot-reload on file changes. (default dev) |
+| `npm run start:debug`| `nest start --debug --watch` | Start with `--inspect` for the Node debugger.       |
+| `npm run start:prod` | `node dist/main`           | Run the compiled output (after `npm run build`).     |
+| `npm run build`      | `nest build`               | Compile TypeScript to `dist/`.                       |
+| `npm run lint`       | `eslint ... --fix`         | Lint (`src/`, `apps/`, `libs/`, `test/`) and autofix.|
+| `npm run format`     | `prettier --write ...`     | Format with Prettier.                                |
+| `npm test`           | `jest`                     | Run the unit tests.                                  |
+| `npm run test:watch` | `jest --watch`             | Re-run unit tests on file change.                    |
+| `npm run test:cov`   | `jest --coverage`          | Unit tests with coverage report.                     |
+| `npm run test:e2e`   | `jest --config ./test/jest-e2e.json` | Run the E2E test suite.                |
+| `npm run db:migrate` | `typeorm-ts-node-commonjs migration:run -d src/database/data-source.ts` | Apply pending schema migrations. |
+| `npm run db:migrations` | `typeorm-ts-node-commonjs migration:show -d src/database/data-source.ts` | List applied and pending migrations. |
+| `npm run db:migrate:revert` | `typeorm-ts-node-commonjs migration:revert -d src/database/data-source.ts` | Roll back the latest migration. |
+| `npm run db:seed`    | `ts-node -r tsconfig-paths/register scripts/seed.ts` | Insert the idempotent core demo dataset. |
+| `npm run db:setup`   | `npm run db:migrate && npm run db:seed` | Migrate and seed in one step. |
+
+### Schema migrations and seed data
+
+The core schema (users, puzzles, puzzle completions, rewards, and reward
+claims) is defined by the versioned baseline migration in
+`src/database/migrations/`. Run migrations against a real database before
+starting the API when `DATABASE_SYNC=false`:
+
+```bash
+cd backend
+npm run db:migrate
+npm run db:seed
+```
+
+The seed refuses to run when `NODE_ENV=production` unless
+`SEED_ALLOW_PRODUCTION=true` is set, and it never truncates existing data.
+See [`docs/database-schema.md`](../docs/database-schema.md) for the ER
+diagram, table constraints, and the migration authoring checklist.
+
+### API integration suite
+
+`test/api-integration.e2e-spec.ts` (issue #756) is part of the e2e run. It
+boots the real `AppModule` against the test database and:
+
+1. **Discovers every mounted route** from the application's own Swagger
+document and calls each one, so a new endpoint is covered automatically and
+an unmounted route fails the suite.
+2. **Exercises the core flows against fixtures** — puzzle discovery, admin
+creation and publication, correct/incorrect submission grading, rewards and
+duplicate-claim prevention, content, and categories.
+
+Fixtures live in `test/fixtures/test-database.fixture.ts`. `resetDatabase()`
+truncates every entity table and `seedDatabase()` inserts deterministic admin,
+user, puzzle, reward, category, content, and progress records. The suite needs
+the same services as the rest of the e2e run (`DATABASE_*` with
+`DATABASE_SYNC=true`, plus Redis); CI provides them and uploads the coverage
+report as the `backend-e2e-coverage` artifact.
+
+### Run Modes
+
+The backend exposes three runtime modes so you can pick the right
+trade-off between overhead and observability:
+
+| Mode           | Command               | Use it when…                                                                            |
+|----------------|-----------------------|-----------------------------------------------------------------------------------------|
+| **Dev**        | `npm run start:dev`   | Iterating locally — file watcher recompiles on save, fast feedback loop.                |
+| **Debug**      | `npm run start:debug` | Investigating a bug — Node Inspector is enabled, attach Chrome DevTools / VS Code.        |
+| **Production** | `npm run start:prod`  | After `npm run build`. Runs the compiled `dist/main.js` with no watch / dev overhead.  |
+
+> Want the full-stack experience? From the repo root run
+> `make dev` to launch the backend **and** the Next.js frontend.
+
+## Configuration Defaults
+
+The defaults wired up in `config/` are sensible for local development,
+but you should always override them in production:
+
+- `FRONTEND_URL` must point at your deployed frontend (CORS origin).
+- `JWT_SECRET` must be set to a long, random string in production.
+- `DATABASE_SYNC` should be `false` outside of development — use
+  TypeORM migrations for schema management instead.
+
+## Development
+
+```bash
+# Start with hot-reload (uses the run mode above)
 npm run start:dev
 
-# Production build
+# Production build + run
 npm run build
 npm run start:prod
 ```
 
-The server runs at `http://localhost:3001` (non-default port — ensure your frontend's `FRONTEND_URL` matches).
+The server runs at `http://localhost:3001` (note: not the NestJS
+default — ensure your frontend's `FRONTEND_URL` matches `3001` if you
+override it).
 
 ## API Documentation
 
-Swagger documentation is available at `http://localhost:3001/api/docs` when the server is running. It provides interactive exploration of all endpoints, request schemas, and authentication requirements.
+When enabled, Swagger UI is served at `http://localhost:3001/docs` (the
+`/docs` route family is excluded from the `/api` global prefix). It
+provides interactive exploration of all endpoints, request schemas, and
+authentication requirements.
+
+The UI is governed by the `swagger.enabled` flag in
+`backend/config/app.config.ts` (see `backend/src/swagger.ts`):
+
+- **Development** (and any non-production environment) serves `/docs` by
+  default.
+- **Production / staging / test** keeps `/docs` disabled by default,
+  because the document exposes the full route inventory and DTO shapes.
+  Opt back in explicitly with `SWAGGER_ENABLED=true` when you need to
+  introspect a running instance:
+
+  ```env
+  SWAGGER_ENABLED=true
+  ```
+
+`npm run test:e2e -- swagger` covers both the enabled and disabled paths.
 
 ## Testing
 
@@ -121,8 +315,11 @@ npm run test:watch
 # With coverage
 npm run test:cov
 
-# E2E tests
+# E2E tests (includes the API integration suite)
 npm run test:e2e
+
+# E2E tests + coverage report (coverage-e2e/lcov.info)
+npm run test:e2e:cov
 ```
 
 ## Code Quality
@@ -137,10 +334,29 @@ npm run format
 
 ## CORS Configuration
 
-The backend is configured to accept requests from `http://localhost:3000` (frontend dev server) with credentials enabled. For production, update `FRONTEND_URL` in your environment configuration.
+The backend is configured to accept requests from
+`http://localhost:3000` (frontend dev server) with credentials enabled.
+For production, update `FRONTEND_URL` in your environment configuration.
 
 ## Modules
 
+- **Auth** — JWT-based authentication, OAuth account linking (GitHub,
+  Twitter, Discord).
+- **Content** — Educational articles and video management.
+- **Puzzle Category** — Multi-tier puzzle organization with
+  difficulty levels.
+- **Rewards** — NFT, badge, and XP reward distribution with claim
+  tracking.
+- **Progress** — User progression, XP calculation, and level
+  advancement.
+- **Leaderboard** — Global and friend-based ranking systems.
+- **Referrals** — Invite tracking with tiered reward bonuses.
+- **Analytics** — Event logging and usage statistics.
+- **Notifications** — In-app notification delivery.
+- **NFT Claim** — StarkNet smart contract interaction for on-chain
+  minting.
+- **User Report Card** — Per-user performance summaries.
+- **Multiplayer Queue** — Socket.IO-based matchmaking.
 - **Auth** — JWT-based authentication, OAuth account linking (GitHub, Twitter, Discord)
 - **Content** — Educational articles and video management
 - **Puzzle Category** — Multi-tier puzzle organization with difficulty levels
@@ -159,3 +375,18 @@ The backend is configured to accept requests from `http://localhost:3000` (front
 - [Root project README](../README.md)
 - [Frontend README](../frontend/README.md)
 - [Contributing Guidelines](../CONTRIBUTING.md)
+
+# API reference
+
+In development, start the backend and open [http://localhost:3001/docs](http://localhost:3001/docs).
+The Swagger UI is generated from the NestJS controllers and DTOs; use **Try it out**
+to inspect and send example requests. The raw OpenAPI document is available at
+`/docs-json`, and the checked-in reference is generated with `npm run openapi:generate`.
+
+Swagger is disabled by default in production, staging, and test environments.
+Set `SWAGGER_ENABLED=true` to expose it there. For example, once enabled:
+
+```sh
+curl http://localhost:3001/docs-json
+curl http://localhost:3001/api/v1/health
+```

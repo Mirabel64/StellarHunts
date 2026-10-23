@@ -1,0 +1,18 @@
+{
+  "earn": {
+    "dailyCheckIn": 10,
+    "puzzleByDifficulty": { "easy": 20, "medium": 35, "hard": 60 },
+    "quizCompletion": 25,
+    "streakDayBonus": 5,
+    "streakBonusCap": 25,
+    "verifiedReferral": 100
+  },
+  "spend": {
+    "healthPotion": 40,
+    "silverKey": 100,
+    "xpBoost": 150,
+    "bronzeChest": 250,
+    "coinPack": 600,
+    "rareSkinCrate": 1200
+  }
+}

@@ -4,7 +4,7 @@ Thank you for your interest in contributing to StellarHunts. This document outli
 
 ## Code of Conduct
 
-By participating in this project, you agree to maintain a respectful and inclusive environment. Harassment, discriminatory language, and personal attacks are not tolerated.
+By participating in this project, you agree to follow the [Code of Conduct](CODE_OF_CONDUCT.md). Harassment, discriminatory language, and personal attacks are not tolerated.
 
 ## Getting Started
 
@@ -38,6 +38,105 @@ npm run start:dev     # API at http://localhost:3001
 cd frontend
 npm run dev           # UI at http://localhost:3000
 ```
+
+## Dependency Policy
+
+This monorepo has **three npm workspaces** (root, `frontend/`, `backend/`) and
+one Rust workspace (`onchain/`). Each workspace owns its own dependencies and
+its own lockfile.
+
+### Workspace ownership
+
+| Workspace | `package.json` | Lockfile |
+|-----------|---------------|----------|
+| Root      | `package.json` | `package-lock.json` |
+| Backend   | `backend/package.json` | `backend/package-lock.json` |
+| Frontend  | `frontend/package.json` | `frontend/package-lock.json` |
+| Onchain   | `onchain/Cargo.toml` (workspace) | `onchain/Cargo.lock` |
+
+All four lockfiles are **committed and authoritative**. A PR that modifies a
+`package.json` must include the regenerated lockfile for that workspace.
+
+> **Known issue — self-referential root dependency:**
+> The root `package.json` carries `"backend": "file:"` in its dependencies,
+> a leftover from an earlier monorepo experiment. This entry is intentionally
+> kept for backwards compatibility with existing tooling scripts that resolve
+> the `backend` package by name; it does not affect `npm install` or CI.
+> The root `package-lock.json` therefore shows a local-path entry for
+> `backend` — this is expected and not a mistake.
+
+### Adding a dependency
+
+Always add dependencies to the specific workspace that uses them. Do **not**
+add application dependencies to the root workspace.
+
+```bash
+# Add a production dependency to the backend
+npm install --workspace backend <package>
+
+# Add a dev dependency to the frontend
+npm install --workspace frontend --save-dev <package>
+
+# Add a dependency to the root (tooling only, e.g. Husky, commitlint)
+npm install --save-dev <package>
+
+# Add a Rust dependency to a specific onchain crate
+# (edit onchain/contracts/<crate>/Cargo.toml, then run:)
+cargo update --manifest-path onchain/Cargo.toml
+```
+
+After installing, verify the correct lockfile was updated:
+
+```bash
+# Confirm only the expected lockfile changed
+git diff --name-only | grep package-lock
+```
+
+### Updating a dependency
+
+```bash
+# Update a single package in a workspace
+npm update --workspace backend <package>
+
+# Update all packages in a workspace (respects semver ranges)
+npm update --workspace frontend
+
+# Check for outdated packages
+npm outdated --workspace backend
+```
+
+### Dependabot grouping
+
+Dependabot opens weekly PRs against **four directories** (`/`, `/frontend`,
+`/backend`, `onchain/`). Related packages are grouped to reduce PR noise:
+
+| Group | Patterns | Workspace |
+|-------|---------|-----------|
+| `nestjs` | `@nestjs/*` | root |
+| `react` | `react`, `react-dom`, `@types/react*` | root |
+| `stellar` | `@stellar/*` | root |
+| `soroban` | `soroban-*` | onchain (Cargo) |
+
+When reviewing a Dependabot PR, check that:
+1. Only the expected lockfile(s) changed.
+2. No new `src/`-absolute imports were introduced.
+3. `npm run build` and `npm test` pass in the affected workspace.
+4. The advisory column in [SECURITY.md](SECURITY.md) is current (for security
+   bumps).
+
+### Reviewer checklist for dependency PRs
+
+- [ ] Dependency is added to the correct workspace.
+- [ ] The correct lockfile(s) are regenerated and committed.
+- [ ] No version ranges are widened without justification.
+- [ ] `npm run build` passes in the affected workspace.
+- [ ] `npm test` passes in the affected workspace.
+- [ ] Security advisories (if any) are noted in the PR description and in
+      `SECURITY.md` if they cannot be resolved immediately.
+- [ ] The self-referential `backend` root entry has not been removed — it is
+      intentional (see note above).
+
+---
 
 ## Branching Strategy
 
@@ -101,6 +200,15 @@ docs(api): document rewards claim endpoint
 - **Formatting**: Run `npm run format` (Prettier) before committing
 - **Modules**: Follow NestJS modular architecture — each feature gets its own module with `controller`, `service`, and `entity` files
 - **DTOs**: Validate all inputs using `class-validator` decorators
+  - Every DTO bound with `@Body()` (a request DTO) must decorate its required
+    fields (`@IsString`, `@IsInt`, `@IsUUID`, …) so the global `ValidationPipe`
+    (`whitelist: true`, `forbidNonWhitelisted: true`) can enforce types and
+    reject unknown properties instead of silently stripping them (issue #529).
+  - Response-only DTOs (shapes returned to clients, never bound as a request
+    body) must start with the marker comment `// Response-only DTO` and carry
+    no validation decorators by design.
+  - `update-*` DTOs should extend their decorated `create-*` base via
+    `PartialType` so the whitelisted properties are inherited.
 - **API docs**: Use Swagger decorators (`@ApiTags`, `@ApiOperation`, `@ApiResponse`) for all endpoints
 
 ### Onchain (Soroban / Rust)
@@ -112,29 +220,41 @@ docs(api): document rewards claim endpoint
 - **Authorization**: Use `require_auth()` on top-level callers; rely on `env.invoker()` to gate cross-contract calls
 - **Testing**: Write `#[test]` cases for all contract methods using `Env::default()` and `env.mock_all_auths()`
 
-## Testing
+### Testing Strategies & Watch Mode Guide
 
 All changes should include appropriate tests. Run the relevant test suite before submitting a PR.
 
-### Backend Tests
+#### Watch Mode & Path Filtering
+When working on specific modules, run Jest in watch mode or filter by file path to speed up iteration:
 
 ```bash
-# Unit tests
-cd backend && npm test
+# Filter backend tests by path pattern
+cd backend && npm test -- --testPathPattern=auth
 
-# Watch mode
-npm run test:watch
+# Watch mode for a specific test file
+cd backend && npm run test:watch -- src/auth/auth.service.spec.ts
 
-# With coverage
-npm run test:cov
-
-# E2E tests
-npm run test:e2e
+# Filter frontend Vitest tests by filename
+cd frontend && npm test -- puzzleReviewService
 ```
 
-### Frontend Tests
+Tests live in `frontend/tests/` and use `.test.js` (or `.test.jsx`) extensions.
 
-Currently, the frontend does not have a dedicated test suite configured. Ensure any UI changes are manually verified in the browser before submitting a pull request.
+### Backend E2E Tests
+
+The backend e2e specs live in `backend/test/` and run against a real PostgreSQL
+instance (plus Redis). Jest config: `backend/test/jest-e2e.json`.
+
+```bash
+# Run the backend e2e suite (requires PostgreSQL + Redis)
+cd backend && npm run test:e2e
+
+# Or via the Makefile (from the repository root)
+make test-backend-e2e
+
+# Run a single e2e spec by name
+cd backend && npm run test:e2e -- security-headers
+```
 
 ### Onchain Tests
 
@@ -153,6 +273,64 @@ The CI workflow (`.github/workflows/build.yml`) runs automatically on push to `m
 - **Test**: `cargo test --workspace`
 
 All checks must pass before a pull request can be merged.
+
+### Running the full check suite
+
+CI enforces more than the contract checks. The commands below reproduce every
+workflow check locally; each is marked **required** (CI blocks the PR) or
+**advisory** (CI reports it but does not block).
+
+```bash
+# Everything CI runs, in one command (from the repository root)
+make ci
+
+# Backend unit tests (required — .github/workflows/build.yml)
+cd backend && npm test
+
+# Backend e2e suite — backend/test/*.e2e-spec.ts, config backend/test/jest-e2e.json
+# (required; the workflow provisions Postgres + Redis service containers first)
+cd backend && npm run test:e2e
+# same as: make test-backend-e2e
+
+# Onchain contract checks (required — .github/workflows/build.yml)
+cd onchain && cargo fmt --all -- --check
+cd onchain && cargo build --workspace --release
+cd onchain && cargo test --workspace
+
+# Onchain dependency/supply-chain audit (required — .github/workflows/build.yml)
+cd onchain && cargo deny --locked check advisories licenses bans sources
+
+# npm dependency audit in frontend and backend (critical = required, high = advisory)
+cd backend  && npm audit --audit-level=critical
+cd frontend && npm audit --audit-level=high   # advisory; see SECURITY.md
+
+# Secret scanning (advisory — .github/workflows/security.yml)
+gitleaks git --redact --no-banner --exit-code=1 \
+  --report-format sarif --report-path gitleaks.sarif
+```
+
+Security scanning jobs — **CodeQL** (JavaScript/TypeScript analysis),
+**Gitleaks** (secret scanning) and **dependency review** — run from
+`.github/workflows/security.yml` and cannot all be reproduced locally; CodeQL
+needs the GitHub Actions runner. The local equivalents of what can be run are
+the `npm audit` / `cargo deny` commands above. See [SECURITY.md](SECURITY.md)
+for the current advisory-versus-required status of every security gate.
+
+### One command before you open a PR
+
+Before opening a pull request, run the full check suite locally with a
+single command from the repository root:
+
+```bash
+make ci
+```
+
+The equivalent npm entry point is `npm run ci`. Both delegate to the same
+per-workspace scripts (backend lint + tests, frontend lint + tests, onchain
+format + tests, and both production builds), so running either one locally
+is equivalent to what CI enforces. The root `npm test`, `npm run lint` and
+`npm run build` scripts map to the corresponding `make test`, `make lint`
+and `make build` targets if you only want part of the suite.
 
 ## Pull Request Process
 
@@ -178,6 +356,47 @@ Before submitting, confirm:
 
 A PR template is available at `.github/PULL_REQUEST_TEMPLATE.md` and will auto-populate when you open a new pull request.
 
+## Releases and Versioning
+
+StellarHunts follows [Semantic Versioning](https://semver.org/): **MAJOR** for
+breaking changes, **MINOR** for backwards-compatible features, and **PATCH**
+for backwards-compatible fixes. The version lives in the root,
+`backend/`, and `frontend/` `package.json` files and must be identical in all
+three.
+
+Release notes are generated from [Conventional Commits](https://www.conventionalcommits.org/).
+Write commit subjects as `type(scope): description` (`feat`, `fix`, `perf`,
+`refactor`, `docs`, `test`, `build`, `ci`, `style`, `chore`) so the changelog
+can group them; a `!` after the type marks a breaking change.
+
+### Preparing a release
+
+```bash
+# From a clean main branch, choose the semver bump
+npm run release:prepare -- patch   # or minor / major / x.y.z
+
+# Review the version bump and the generated CHANGELOG.md section, then:
+git add package.json backend/package.json frontend/package.json package-lock.json \
+        backend/package-lock.json frontend/package-lock.json CHANGELOG.md
+git commit -m "chore(release): vX.Y.Z"
+git tag -a vX.Y.Z -m "Release vX.Y.Z"
+git push origin main --follow-tags
+```
+
+`npm run release:prepare` refuses to run on a dirty tree, checks that all
+workspace versions agree, and writes the changelog section for the commits
+since the previous tag. You can preview it with `--dry-run`, or regenerate a
+section directly with `node scripts/changelog.mjs --version X.Y.Z --write`.
+
+The pushed tag triggers [`.github/workflows/release.yml`](.github/workflows/release.yml),
+which verifies that the tag matches the workspace versions, builds the
+frontend, backend, and Soroban artifacts, and publishes a GitHub Release whose
+notes come from the same generator. The manual **Release** workflow trigger is
+only for re-running a release; it does not move the tag.
+
+See [RELEASE.md](RELEASE.md) for the full checklist, including artifact
+retention and contract-admin rotation.
+
 ## Smart Contract Contributions
 
 For contributions to the `onchain/` directory:
@@ -191,3 +410,44 @@ For contributions to the `onchain/` directory:
 ## Questions?
 
 If you have questions about the contribution process, open a discussion or issue in the repository. For urgent matters, contact the development team directly.
+
+## Contribution Workflow
+
+1. Pick or open an issue and comment that you are working on it.
+2. Fork the repository and create a branch from `main`.
+3. Make focused changes, with tests, and keep the PR to one concern.
+4. Run the checks for the workspaces you touched (see below).
+5. Open a pull request using the [PR template](.github/PULL_REQUEST_TEMPLATE.md) and link the issue with `Closes #<number>`.
+
+### Branch naming
+
+`<type>/<issue-number>-<short-description>`, for example `feat/743-unlock-notifications` or `fix/791-typeorm-entities`.
+
+Types: `feat`, `fix`, `docs`, `test`, `chore`, `refactor`, `ci`.
+
+### Commit conventions
+
+[Conventional Commits](https://www.conventionalcommits.org/): `<type>(<scope>): <summary>`, imperative mood, no trailing period, summary under 72 characters.
+
+```
+feat(achievements): notify players when an achievement unlocks
+fix(puzzle): reject empty answers
+```
+
+## Code Style
+
+Style is enforced by tooling, not review comments. Run the linters before pushing:
+
+| Area | Tooling | Command |
+|------|---------|---------|
+| Backend (TypeScript) | ESLint (`backend/.eslintrc.js`) + Prettier (`backend/.prettierrc`: single quotes, trailing commas) | `cd backend && npm run lint` |
+| Frontend (Next.js) | ESLint (`frontend/.eslintrc.json`) | `cd frontend && npm run lint` |
+| Contracts (Rust) | `rustfmt` | `cd onchain && cargo fmt --all` |
+
+General rules:
+
+- Editor defaults live in `.editorconfig` (UTF-8, LF, 2-space indent for TS/JS/YAML, 4 for Rust).
+- Prefer small, named functions over long handlers; keep controllers thin and put logic in services.
+- Validate every external input with DTOs (`class-validator`); never trust client-supplied answers or scores.
+- No secrets in code or commits; use `.env` files (see `.env.example`) and the secret scanning in CI.
+- Every behaviour change needs a test; contracts must keep coverage above the CI threshold.

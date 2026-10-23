@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "id": "medium-soroban-math",
+  "title": "Stellar Stroop Calculation",
+  "description": "Calculate stroop unit conversions required for precision Soroban contract payments.",
+  "difficulty": "medium",
+  "type": "math",
+  "content": {
+    "prompt": "1 XLM equals 10,000,000 (10^7) stroops. If a smart contract invocation consumes 2,500,000 stroops in resource fees, how many XLM was spent? (Enter the decimal number)."
+  },
+  "solution": "0.25",
+  "solutionType": "numeric_exact",
+  "hint": "Divide 2,500,000 by 10,000,000.",
+  "reward": {
+    "rewardId": "reward-badge-medium-01",
+    "type": "points",
+    "metadata": {
+      "points": 50,
+      "skill": "stellar-math"
+    }
+  },
+  "author": "SorobanDev",
+  "tags": ["math", "soroban", "fees", "stroops"],
+  "isActive": true
+}

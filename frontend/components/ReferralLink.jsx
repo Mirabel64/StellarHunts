@@ -46,6 +46,7 @@ const ReferralLink = ({ referralLink }) => {
           <Input
             value={referralLink}
             readOnly
+            aria-label="Your referral link"
             className="bg-white/5 border-white/20 text-white"
           />
         </div>
@@ -55,23 +56,26 @@ const ReferralLink = ({ referralLink }) => {
             variant="outline"
             className="border-white/20 text-white hover:bg-white/10"
           >
-            <Copy className="w-4 h-4 mr-2" />
+            <Copy aria-hidden="true" className="w-4 h-4 mr-2" />
             {copied ? "Copied!" : "Copy"}
           </Button>
           <Button
             onClick={shareReferral}
             className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600"
           >
-            <Share2 className="w-4 h-4 mr-2" />
+            <Share2 aria-hidden="true" className="w-4 h-4 mr-2" />
             Share
           </Button>
         </div>
+        <span role="status" className="sr-only">
+          {copied ? "Referral link copied to clipboard" : ""}
+        </span>
       </div>
 
       {/* Reward Info */}
       <div className="mt-6 p-4 rounded-lg bg-gradient-to-r from-purple-500/10 to-pink-500/10 border border-purple-500/20">
         <div className="flex items-center space-x-3">
-          <Award className="w-5 h-5 text-yellow-400" />
+          <Award aria-hidden="true" className="w-5 h-5 text-yellow-400" />
           <div>
             <p className="text-white font-medium">Rewards for each successful referral:</p>
             <p className="text-gray-300 text-sm">• 50 XP bonus • Rare NFT chance • Exclusive badge</p>
@@ -82,4 +86,4 @@ const ReferralLink = ({ referralLink }) => {
   );
 };
 
-export default ReferralLink; 
+export default ReferralLink;

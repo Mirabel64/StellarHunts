@@ -1,4 +1,10 @@
-import { IsString, IsNumber, IsOptional, IsArray, IsObject } from 'class-validator';
+import {
+  IsString,
+  IsNumber,
+  IsOptional,
+  IsArray,
+  IsObject,
+} from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class ReportCardDto {
@@ -30,9 +36,9 @@ export class ReportCardDto {
   @IsNumber()
   streakDays: number;
 
-  @ApiProperty({ 
+  @ApiProperty({
     description: 'Breakdown by puzzle category',
-    example: { beginner: 5, intermediate: 3, advanced: 1 }
+    example: { beginner: 5, intermediate: 3, advanced: 1 },
   })
   @IsOptional()
   @IsObject()
@@ -42,9 +48,9 @@ export class ReportCardDto {
     advanced: number;
   };
 
-  @ApiProperty({ 
+  @ApiProperty({
     description: 'Recent achievements',
-    example: ['First NFT Earned', 'Speed Solver', '7-Day Streak']
+    example: ['First NFT Earned', 'Speed Solver', '7-Day Streak'],
   })
   @IsOptional()
   @IsArray()
@@ -55,6 +61,21 @@ export class ReportCardDto {
 
   @ApiProperty({ description: 'Report card last update date' })
   updatedAt: Date;
+}
+
+// Request-body DTO for POST :id/report-card. The user id comes from the
+// route param and is set by the controller, so the body itself is entirely
+// optional overrides (issue #529).
+export class CreateReportCardBodyDto {
+  @ApiProperty({ description: 'Number of completed puzzles', required: false })
+  @IsOptional()
+  @IsNumber()
+  completedPuzzles?: number;
+
+  @ApiProperty({ description: 'Number of rewards earned', required: false })
+  @IsOptional()
+  @IsNumber()
+  rewardsEarned?: number;
 }
 
 export class CreateReportCardDto {
