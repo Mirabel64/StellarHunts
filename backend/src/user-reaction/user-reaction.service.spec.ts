@@ -4,13 +4,12 @@ import type { Repository } from "typeorm"
 import { UserReactionService } from "./user-reaction.service"
 import { Reaction } from "./entities/reaction.entity"
 import { BadRequestException, NotFoundException } from "@nestjs/common"
-import { jest } from "@jest/globals" // Import jest to declare it
 
 describe("UserReactionService", () => {
   let service: UserReactionService
   let repository: Repository<Reaction>
 
-  const mockRepository = {
+  const mockRepository: any = {
     create: jest.fn(),
     save: jest.fn(),
     find: jest.fn(),

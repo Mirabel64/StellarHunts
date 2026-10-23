@@ -8,7 +8,7 @@ describe('AchievementsController', () => {
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [AchievementController],
-      providers: [AchievementService],
+      providers: [{ provide: AchievementService, useValue: {} }],
     }).compile();
 
     controller = module.get<AchievementController>(AchievementController);

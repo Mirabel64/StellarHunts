@@ -8,10 +8,12 @@ describe('PuzzleDependencyController', () => {
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [PuzzleDependencyController],
-      providers: [PuzzleDependencyService],
+      providers: [{ provide: PuzzleDependencyService, useValue: {} }],
     }).compile();
 
-    controller = module.get<PuzzleDependencyController>(PuzzleDependencyController);
+    controller = module.get<PuzzleDependencyController>(
+      PuzzleDependencyController,
+    );
   });
 
   it('should be defined', () => {

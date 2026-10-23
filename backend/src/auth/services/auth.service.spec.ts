@@ -7,7 +7,6 @@ import { AuthService } from "./auth.service"
 import { User } from "../entities/user.entity"
 import type { RegisterDto } from "../dto/register.dto"
 import type { LoginDto } from "../dto/login.dto"
-import { jest } from "@jest/globals"
 import type { Repository } from "typeorm"
 
 describe("AuthService", () => {
@@ -51,7 +50,7 @@ describe("AuthService", () => {
 
     service = module.get<AuthService>(AuthService)
     userRepository = module.get(getRepositoryToken(User)) as jest.Mocked<Repository<User>>
-    jwtService = module.get<JwtService>(JwtService)
+    jwtService = module.get(JwtService) as jest.Mocked<JwtService>
   })
 
   afterEach(() => {
@@ -61,6 +60,7 @@ describe("AuthService", () => {
   describe("register", () => {
     const registerDto: RegisterDto = {
       name: "John Doe",
+      username: "johndoe",
       email: "john@example.com",
       password: "SecurePass123!",
     }

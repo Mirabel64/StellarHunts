@@ -5,14 +5,13 @@ import { MultiplayerQueueService } from "./multiplayer-queue.service"
 import { Queue, QueueStatus, SkillLevel } from "./entities/queue.entity"
 import { Match } from "./entities/match.entity"
 import { BadRequestException, NotFoundException } from "@nestjs/common"
-import { jest } from "@jest/globals"
 
 describe("MultiplayerQueueService", () => {
   let service: MultiplayerQueueService
   let queueRepository: Repository<Queue>
   let matchRepository: Repository<Match>
 
-  const mockQueueRepository = {
+  const mockQueueRepository: any = {
     create: jest.fn(),
     save: jest.fn(),
     find: jest.fn(),
@@ -21,7 +20,7 @@ describe("MultiplayerQueueService", () => {
     count: jest.fn(),
   }
 
-  const mockMatchRepository = {
+  const mockMatchRepository: any = {
     create: jest.fn(),
     save: jest.fn(),
     findOne: jest.fn(),
@@ -73,6 +72,7 @@ describe("MultiplayerQueueService", () => {
       }
 
       mockQueueRepository.findOne.mockResolvedValue(null) // No existing entry
+      mockQueueRepository.find.mockResolvedValue([]) // No other waiting players
       mockQueueRepository.create.mockReturnValue(mockQueueEntry)
       mockQueueRepository.save.mockResolvedValue(mockQueueEntry)
 

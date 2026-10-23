@@ -4,13 +4,12 @@ import type { Repository } from "typeorm"
 import { UserSettingsService } from "./user-settings.service"
 import { UserSettings, Language, Theme, SoundVolume } from "./entities/user-settings.entity"
 import { BadRequestException } from "@nestjs/common"
-import { jest } from "@jest/globals"
 
 describe("UserSettingsService", () => {
   let service: UserSettingsService
   let repository: Repository<UserSettings>
 
-  const mockRepository = {
+  const mockRepository: any = {
     create: jest.fn(),
     save: jest.fn(),
     find: jest.fn(),
@@ -192,7 +191,7 @@ describe("UserSettingsService", () => {
 
     it("should throw BadRequestException for invalid notification types", async () => {
       const userId = "123e4567-e89b-12d3-a456-426614174000"
-      const updateDto = {
+      const updateDto: any = {
         notificationTypes: {
           invalidKey: true, // Invalid notification type
         },

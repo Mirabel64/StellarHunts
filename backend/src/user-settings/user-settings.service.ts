@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from "@nestjs/common"
+import { InjectRepository } from "@nestjs/typeorm"
 import type { Repository } from "typeorm"
-import { type UserSettings, Language, Theme, NotificationFrequency, SoundVolume } from "./entities/user-settings.entity"
+import { UserSettings, Language, Theme, NotificationFrequency, SoundVolume } from "./entities/user-settings.entity"
 import type { UpdateUserSettingsDto, CreateUserSettingsDto } from "./dto/user-settings.dto"
 import type { UserSettingsResponseDto } from "./dto/user-settings-response.dto"
 import type { SettingsCategoriesDto } from "./dto/settings-categories.dto"
@@ -9,7 +10,10 @@ import type { SettingsCategoriesDto } from "./dto/settings-categories.dto"
 export class UserSettingsService {
   private readonly logger = new Logger(UserSettingsService.name)
 
-  constructor(private readonly userSettingsRepository: Repository<UserSettings>) {}
+  constructor(
+    @InjectRepository(UserSettings)
+    private readonly userSettingsRepository: Repository<UserSettings>,
+  ) {}
 
   /**
    * Get user settings by user ID, create default if not exists

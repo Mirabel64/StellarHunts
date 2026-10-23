@@ -1,88 +1,42 @@
-import {
-  Injectable,
-  BadRequestException,
-  NotFoundException,
-} from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { Report } from './entities/report.entity';
+import { Test, TestingModule } from '@nestjs/testing';
+import { ReportsService } from './reports.service';
 import { CreateReportDto } from './dto/create-report.dto';
 import { UpdateReportDto } from './dto/update-report.dto';
 
-@Injectable()
-export class ReportsService {
-  constructor(
-    @InjectRepository(Report)
-    private readonly reportRepository: Repository<Report>,
-  ) {}
+describe('ReportsService', () => {
+  let service: ReportsService;
 
-  /**
-   * Create a new report
-   */
-  async create(createReportDto: CreateReportDto, userId: number) {
-    const existingReport = await this.reportRepository.findOne({
-      where: {
-        userId,
-        puzzleId: createReportDto.puzzleId,
-      },
-    });
+  beforeEach(async () => {
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [ReportsService],
+    }).compile();
 
-    if (existingReport) {
-      throw new BadRequestException(
-        'You have already reported this puzzle. Thank you!',
-      );
-    }
+    service = module.get<ReportsService>(ReportsService);
+  });
 
-    const report = this.reportRepository.create({
-      ...createReportDto,
-      userId,
-      resolved: false,
-    });
+  it('should be defined', () => {
+    expect(service).toBeDefined();
+  });
 
-    return this.reportRepository.save(report);
-  }
+  it('should create a report', () => {
+    const dto = {} as CreateReportDto;
+    expect(service.create(dto)).toBe('This action adds a new report');
+  });
 
-  /**
-   * Admin-only: Get all reports
-   */
-  async findAll() {
-    return this.reportRepository.find({
-      order: { createdAt: 'DESC' },
-    });
-  }
+  it('should return all reports', () => {
+    expect(service.findAll()).toContain('all reports');
+  });
 
-  /**
-   * Admin-only: Update a report
-   */
-  async update(id: number, updateDto: UpdateReportDto) {
-    const report = await this.reportRepository.findOne({ where: { id } });
+  it('should return one report by id', () => {
+    expect(service.findOne(1)).toBe('This action returns a #1 report');
+  });
 
-    if (!report) {
-      throw new NotFoundException('Report not found');
-    }
+  it('should update a report', () => {
+    const dto = {} as UpdateReportDto;
+    expect(service.update(2, dto)).toBe('This action updates a #2 report');
+  });
 
-    Object.assign(report, updateDto);
-
-    return this.reportRepository.save(report);
-  }
-
-  /**
-   * Optional: Get reports by user
-   */
-  async findByUser(userId: number) {
-    return this.reportRepository.find({
-      where: { userId },
-      order: { createdAt: 'DESC' },
-    });
-  }
-
-  /**
-   * Optional: Get unresolved reports
-   */
-  async findUnresolved() {
-    return this.reportRepository.find({
-      where: { resolved: false },
-      order: { createdAt: 'DESC' },
-    });
-  }
-}
+  it('should remove a report', () => {
+    expect(service.remove(3)).toBe('This action removes a #3 report');
+  });
+});

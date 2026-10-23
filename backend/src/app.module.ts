@@ -5,6 +5,8 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import appConfig from 'config/app.config';
 import databaseConfig from 'config/database.config';
 
+import { entities } from './entities/entities.registry';
+
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 
@@ -55,17 +57,12 @@ import { ChallengeModule } from './gameMechanics/challenge.module';
         username: configService.get('database.user'),
         password: configService.get('database.password'),
         database: configService.get('database.name'),
-        entities: [
-          // Canonical entity classes for each unique table.
-          // Duplicate table-name collisions (users / badges / puzzles) are resolved
-          // by picking one canonical entity per table and renaming the other copies
-          // to dedicated tables (see the entity files for `user_inventory_users`,
-          // `user_inventory_badges`, and `gm_users`).
-          require('./auth/entities/user.entity').User,
-          require('./time-trial/time-trial.entity').TimeTrial,
-          require('./puzzle/puzzle.entity').Puzzle,
-          require('./puzzle-category/entities/category.entity').Category,
-        ],
+        // Full registry of every entity in the codebase (one canonical class
+        // per unique table — duplicate same-table copies are excluded, see
+        // entities.registry.ts). Feature modules register their repositories
+        // via TypeOrmModule.forFeature, and `autoLoadEntities` appends those
+        // entities here at bootstrap so every repository resolves metadata.
+        entities: [...entities],
         synchronize: configService.get('database.synchronize'),
         autoLoadEntities: true,
       }),

@@ -1,8 +1,9 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from "@nestjs/common"
+import { InjectRepository } from "@nestjs/typeorm"
 import { type Repository, MoreThan } from "typeorm"
 import { Cron, CronExpression } from "@nestjs/schedule"
-import { type Queue, QueueStatus, SkillLevel } from "./entities/queue.entity"
-import type { Match } from "./entities/match.entity"
+import { Queue, QueueStatus, SkillLevel } from "./entities/queue.entity"
+import { Match } from "./entities/match.entity"
 import type { JoinQueueDto } from "./dto/join-queue.dto"
 import type { QueueStatusDto } from "./dto/queue-status.dto"
 import type { MatchResultDto } from "./dto/match-result.dto"
@@ -13,7 +14,9 @@ export class MultiplayerQueueService {
   private readonly logger = new Logger(MultiplayerQueueService.name)
 
   constructor(
+    @InjectRepository(Queue)
     private readonly queueRepository: Repository<Queue>,
+    @InjectRepository(Match)
     private readonly matchRepository: Repository<Match>,
   ) {}
 
