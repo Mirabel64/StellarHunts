@@ -7,11 +7,23 @@ import AnimatedBlurBackground from "@/components/AnimatedBlurBackground";
 
 export default function Error() {
   const reload = () => {
-    window.location.reload();
+    if (typeof window !== 'undefined') {
+      const count = parseInt(sessionStorage.getItem('error_retry_count') || '0', 10);
+      if (count >= 3) {
+        alert('Multiple errors occurred. Please try returning home or contacting support.');
+        return;
+      }
+      sessionStorage.setItem('error_retry_count', (count + 1).toString());
+      window.location.reload();
+    }
   };
 
   return (
-    <main className="relative min-h-screen w-full overflow-hidden bg-gradient-to-br from-black via-purple-900 to-black">
+    <main
+      id="main-content"
+      tabIndex={-1}
+      className="relative min-h-screen w-full overflow-hidden bg-gradient-to-br from-black via-purple-900 to-black"
+    >
       {/* Animated background blur */}
       <AnimatedBlurBackground />
       {/* Content */}
@@ -46,7 +58,7 @@ export default function Error() {
               className="w-full sm:w-auto bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white font-bold py-4 px-8 rounded-lg transform transition-all hover:scale-105 shadow-lg hover:shadow-purple-500/50"
             >
               <Link href="/" className="flex items-center gap-2">
-                <Home size={20} />
+                <Home aria-hidden="true" size={20} />
                 Return Home
               </Link>
             </Button>
@@ -56,7 +68,7 @@ export default function Error() {
               className="w-full sm:w-auto border-white/20 text-white hover:bg-white/10 hover:text-white bg-transparent font-bold py-4 px-8 rounded-lg transform transition-all hover:scale-105"
             >
               <div className="flex items-center gap-2">
-                <RefreshCcw size={20} />
+                <RefreshCcw aria-hidden="true" size={20} />
                 Try Again
               </div>
             </Button>
@@ -64,7 +76,7 @@ export default function Error() {
 
           {/* Easter Egg Text */}
           <p className="mt-8 text-sm text-gray-400 animate-pulse">
-            DonDon't worryapos;t worry, even the best games crashes somethimes...
+            Don&apos;t worry, even the best games crash sometimes...
           </p>
         </div>
       </div>

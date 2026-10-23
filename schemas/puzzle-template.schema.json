@@ -1,0 +1,162 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://stellarhunts.org/schemas/puzzle-template.schema.json",
+  "title": "StellarHunts Puzzle Template",
+  "description": "Standardized schema for StellarHunts puzzle content, enabling authors to contribute puzzles without modifying game engine or contract code.",
+  "type": "object",
+  "required": [
+    "id",
+    "title",
+    "description",
+    "difficulty",
+    "type",
+    "content",
+    "solution"
+  ],
+  "properties": {
+    "version": {
+      "type": "integer",
+      "minimum": 1,
+      "default": 1,
+      "description": "Schema version of the puzzle template."
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[a-zA-Z0-9_-]+$",
+      "description": "Unique identifier (UUID or kebab-case slug) for the puzzle."
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255,
+      "description": "Short, descriptive title of the puzzle."
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1,
+      "description": "High-level overview and storyline/context for the challenge."
+    },
+    "difficulty": {
+      "type": "string",
+      "enum": ["easy", "medium", "hard", "master"],
+      "description": "Difficulty tier corresponding to game progression and badge tiers."
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "text",
+        "number",
+        "math",
+        "multiple_choice",
+        "logic",
+        "code",
+        "image"
+      ],
+      "description": "Answer input and validation type for the puzzle."
+    },
+    "content": {
+      "type": "object",
+      "required": ["prompt"],
+      "properties": {
+        "prompt": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The primary question or puzzle prompt presented to the user."
+        },
+        "options": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 2,
+          "description": "Options list required for multiple_choice puzzle types."
+        },
+        "initialCode": {
+          "type": "string",
+          "description": "Starter code snippet for code-type puzzles."
+        },
+        "language": {
+          "type": "string",
+          "enum": ["rust", "javascript", "python", "stellar-cli", "bash"],
+          "description": "Programming or scripting language for code puzzles."
+        },
+        "imageUrl": {
+          "type": "string",
+          "format": "uri",
+          "description": "URL to an image asset for image/cryptogram puzzles."
+        },
+        "audioUrl": {
+          "type": "string",
+          "format": "uri",
+          "description": "Optional audio asset URL."
+        }
+      },
+      "additionalProperties": false
+    },
+    "solution": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The expected answer, plaintext solution, or cryptographic hash."
+    },
+    "solutionType": {
+      "type": "string",
+      "enum": ["plain", "sha256", "regex", "numeric_exact"],
+      "default": "plain",
+      "description": "Method used to evaluate the submitted answer against the solution."
+    },
+    "hint": {
+      "type": "string",
+      "maxLength": 2048,
+      "description": "Optional hint to assist stuck players."
+    },
+    "reward": {
+      "type": "object",
+      "properties": {
+        "rewardId": {
+          "type": "string",
+          "description": "Associated backend reward identifier or UUID."
+        },
+        "type": {
+          "type": "string",
+          "enum": ["badge", "nft", "token", "points"],
+          "description": "Type of reward issued upon puzzle completion."
+        },
+        "metadata": {
+          "type": "object",
+          "description": "Custom metadata such as badge rarity, image URL, or points amount."
+        }
+      },
+      "additionalProperties": false
+    },
+    "author": {
+      "type": "string",
+      "maxLength": 100,
+      "description": "Author name, GitHub handle, or Stellar public key of the creator."
+    },
+    "tags": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Searchable topic tags (e.g. soroban, cryptography, stellar-basics)."
+    },
+    "isActive": {
+      "type": "boolean",
+      "default": true,
+      "description": "Whether the puzzle is actively available to players."
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "type": { "const": "multiple_choice" } }
+      },
+      "then": {
+        "properties": {
+          "content": {
+            "required": ["prompt", "options"]
+          }
+        }
+      }
+    }
+  ],
+  "additionalProperties": false
+}

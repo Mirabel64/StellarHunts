@@ -1,3 +1,5 @@
+// Response-only DTO (issue #529): this shape is never bound as a @Body()
+// request type, so it carries no class-validator decorators by design.
 import { ApiProperty } from '@nestjs/swagger';
 
 export class CreateUserRankingDto {
@@ -16,4 +18,20 @@ export class CreateUserRankingDto {
   @ApiProperty()
   rank: number;
 }
-export type UserRankDto = CreateUserRankingDto
+
+export class UserRankDto {
+  @ApiProperty()
+  userId: string;
+
+  @ApiProperty()
+  score: number;
+
+  @ApiProperty()
+  achievements: number;
+
+  @ApiProperty()
+  activityPoints: number;
+
+  @ApiProperty()
+  rank: number;
+}

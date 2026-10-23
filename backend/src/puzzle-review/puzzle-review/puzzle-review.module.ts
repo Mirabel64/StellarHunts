@@ -1,18 +1,25 @@
-import { Module } from "@nestjs/common"
-import { TypeOrmModule } from "@nestjs/typeorm"
-import { ConfigModule } from "@nestjs/config"
-import { PuzzleReviewService } from "./services/puzzle-review.service"
-import { ModerationService } from "./services/moderation.service"
-import { PuzzleReviewController } from "./controllers/puzzle-review.controller"
-import { ModerationController } from "./controllers/moderation.controller"
-import { PuzzleReview } from "./entities/puzzle-review.entity"
-import { ReviewModeration } from "./entities/review-moderation.entity"
-import { AdminGuard } from "./guards/admin.guard"
+import { Module } from '@nestjs/common';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { ConfigModule } from '@nestjs/config';
+import { AdminAuthModule } from '../../admin/admin-auth.module';
+import { AuditLogModule } from '../../audit-log/audit-log.module';
+import { PuzzleReviewService } from './services/puzzle-review.service';
+import { ModerationService } from './services/moderation.service';
+import { PuzzleReviewController } from './controllers/puzzle-review.controller';
+
+import { PuzzleReview } from './entities/puzzle-review.entity';
+import { ReviewModeration } from './entities/review-moderation.entity';
+import { AdminGuard } from './guards/admin.guard';
 
 @Module({
-  imports: [ConfigModule, TypeOrmModule.forFeature([PuzzleReview, ReviewModeration])],
+  imports: [
+    ConfigModule,
+    TypeOrmModule.forFeature([PuzzleReview, ReviewModeration]),
+    AuditLogModule,
+    AdminAuthModule,
+  ],
   providers: [PuzzleReviewService, ModerationService, AdminGuard],
-  controllers: [PuzzleReviewController, ModerationController],
+  controllers: [PuzzleReviewController],
   exports: [PuzzleReviewService, ModerationService],
 })
 export class PuzzleReviewModule {}

@@ -285,4 +285,4 @@ const ReviewDetailModal = ({ review, open, onClose, onApprove, onReject, loading
   );
 };
 
-export default ReviewDetailModal; 
+export default ReviewDetailModal;

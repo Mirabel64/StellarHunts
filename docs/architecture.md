@@ -27,8 +27,8 @@ StellarHunts is a three-tier gamified blockchain application. The system consist
 │  │ Module     │  │ Modules    │  │ (StellarHandlerSvc)  │  │
 │  └────────────┘  └────────────┘  └──────────────────────┘  │
 │  ┌────────────┐  ┌────────────┐  ┌──────────────────────┐  │
-│  │ Progress   │  │ Leaderboard│  │ Multiplayer (Socket) │  │
-│  │ Module     │  │ Module     │  │ Module               │  │
+│  │ Progress   │  │ Multiplayer│  │ In-App Notifications │  │
+│  │ Module     │  │ (Socket)   │  │ Module               │  │
 │  └────────────┘  └────────────┘  └──────────────────────┘  │
 │                        │                                    │
 │            ┌───────────┴───────────┐                        │
@@ -71,7 +71,6 @@ StellarHunts/
 | State (Global) | Zustand | Game state, user session, progress tracking |
 | State (Server) | TanStack Query | API caching, optimistic updates |
 | Auth | NextAuth.js | OAuth, wallet linking, JWT sessions |
-| Forms | Formik + Yup | Form state management and validation |
 | Blockchain | `@stellar/stellar-sdk` + `@stellar/freighter-api` | Wallet connection, contract invocation |
 | HTTP | Axios | API client with interceptors |
 | UI Components | Radix UI + shadcn/ui | Accessible primitives, design system |
@@ -81,17 +80,11 @@ StellarHunts/
 ```
 /                                   Homepage
 /game                               Puzzle game interface
-/leaderboard                        Global rankings
 /puzzles/roadmap                    Puzzle progression timeline
 /invite-friends                     Referral program
 /ref/[referralId]                   Referral landing page
 /admin/puzzle-review                Admin puzzle management
 /admin/puzzle-submission            Admin puzzle creation
-/faq                                Frequently asked questions
-/terms                              Terms of service
-/privacy                            Privacy policy
-/about                              About page
-/profile                            User profile
 /api/auth/[...nextauth]             Auth API routes
 /api/referrals/*                    Referral API routes
 ```
@@ -100,14 +93,16 @@ StellarHunts/
 
 Application state is split across two concerns:
 
-**Zustand (useGameStore)** — Persisted to localStorage for game-specific state:
+**Zustand** — Persisted to localStorage for game-specific state:
 - User authentication status
 - Current puzzle difficulty and progress
 - Completed puzzles and difficulty levels
 - Score tracking and NFT collection
 
+> `@reduxjs/toolkit` is listed as a dependency but is not currently wired up.
+> See [ADR-0002](adr/0002-zustand-alongside-redux-toolkit.md) for the rationale.
+
 **TanStack Query** — Server state caching for:
-- Leaderboard data
 - Puzzle content
 - Referral statistics
 - API-driven data with automatic invalidation
@@ -144,78 +139,72 @@ Application state is split across two concerns:
 
 NestJS modules are organized by domain concern. Each module encapsulates its controller, service, entities, DTOs, and tests.
 
+The table below lists modules that are **actually registered** in `app.module.ts`. Modules present in `backend/src/` but not yet wired into AppModule are noted separately.
+
 **Core / Infrastructure**
 - `ConfigModule` — Environment configuration loading
 - `TypeOrmModule` — Database connection and entity registration
-- `RateLimiterModule` — Request throttling with Redis-backed guards
 - `AnalyticsModule` — Event tracking and usage metrics
-- `MaintenanceModeModule` — Service availability control
-- `MigrationModule` — Database migration orchestration
-- `AuditLogModule` — System audit logging
-- `TokenVerificationModule` — Token validation utilities
 
 **Authentication & Users**
 - `AuthModule` — JWT authentication, registration, login, wallet linking
-- `UserModule` — User CRUD and profile management
-- `UserSettingsModule` — User preferences
-- `UserActivityLogModule` — Audit trail for user actions
 - `UserReportCardModule` — Per-user performance summaries
-- `UserInventoryModule` — NFT and badge ownership tracking
+- `UserActivityLogModule` — Audit trail for user actions
 - `UserRankingModule` — Ranking calculations
-- `WalletModule` — Stellar wallet address management
+- `UserInventoryModule` — NFT and badge ownership tracking
 
 **Puzzle & Content**
-- `PuzzleModule` — Core puzzle CRUD and game logic
-- `PuzzleCategoryModule` — Puzzle categorization and grouping
+- `PuzzleModule` — Core puzzle CRUD and game logic. See the
+  [puzzle author guide](puzzle-author-guide.md) for the authoring,
+  validation, and publishing workflow.
 - `PuzzleSubmissionModule` — Answer submission handling
 - `PuzzleDependencyModule` — Prerequisite puzzle management
-- `PuzzleDraftModule` — Puzzle authoring workflow
-- `PuzzleVersioningModule` — Puzzle revision history
-- `PuzzleReviewModule` — Admin review workflow
 - `PuzzleTranslationModule` — Multi-language support
-- `PuzzleCommentModule` — User discussion on puzzles
-- `PuzzleAccessLogModule` — Access tracking
-- `PuzzleTestCaseModule` — Test case management
-- `PuzzleForkModule` — Puzzle forking and remixing
 - `ContentModule` — Educational articles and resources
 - `ContentRatingModule` — User content ratings
-- `QuizModule` — Quiz-style challenges
 
 **Gamification & Rewards**
 - `RewardsModule` — Reward distribution and claim tracking
 - `RewardShopModule` — Reward marketplace
 - `NFTClaimModule` — On-chain Soroban NFT minting orchestration (StellarHandlerService)
-- `NFTMarketplaceStubModule` — Mock marketplace for testing
-- `AchievementsModule` — Achievement definitions and tracking
-- `BadgeModule` — Badge management
-- `MilestoneModule` — Milestone progression
-- `StreakModule` — Daily/consecutive activity tracking
-- `DailyRewardModule` — Login bonus system
 - `TimeTrialModule` — Timed challenge mode
-- `PromoCodeModule` — Promotional code redemption
 
 **Social & Multiplayer**
 - `MultiplayerQueueModule` — Socket.IO matchmaking
-- `ReferralModule` — Referral program tracking
 - `ReportsModule` — User reporting and moderation
-- `FeedbackModule` — User feedback collection
 - `InAppNotificationsModule` — Notification delivery
 - `ActivityModule` — Social activity feed
 - `UserReactionModule` — Emoji/like reactions
-- `GeostatsModule` — Geographic player statistics
 
-**Progress & Analytics**
+**Progress & Integrations**
 - `ProgressModule` — User progression tracking
-- `SessionModule` — Session lifecycle
-- `HintModule` — Puzzle hint management
 - `ApiKeyModule` — API key management for integrations
-- `AdminModule` — Admin dashboard backend
+
+**Modules present in `backend/src/` but not yet registered in AppModule**
+
+The following directories exist and may be under active development:
+`AuditLogModule`, `BadgeModule`, `DailyRewardModule`, `FeedbackModule`,
+`GeostatsModule`, `HintModule`, `MaintenanceModeModule`, `MigrationModule`,
+`MilestoneModule`, `NFTMarketplaceStubModule`, `PromoCodeModule`,
+`PuzzleAccessLogModule`, `PuzzleCategoryModule`, `PuzzleCommentModule`,
+`PuzzleDraftModule`, `PuzzleForkModule`, `PuzzleReviewModule`,
+`PuzzleTestCaseModule`, `PuzzleVersioningModule`, `QuizModule`,
+`ReferralModule`, `SessionModule`, `StreakModule`,
+`TokenVerificationModule`, `UserModule`, `UserSettingsModule`,
+`UserTokenHistoryModule`, `WalletModule`, `AdminModule`.
+
+> There is **no** `LeaderboardModule` in the source tree. The leaderboard
+> endpoint lives inside `StreakModule` (`GET /streaks/leaderboard`).
 
 ### Database
 
 Primary database: **PostgreSQL** managed through TypeORM with code-first entity definitions.
 
-Key entities: `User`, `Puzzle`, `Category`, `Reward`, `RewardClaim`, `TimeTrial`, `Session`, `Progress`, `Hint`, `Achievement`, `Badge`, `Streak`, `Referral`, `Notification`, `UserActivityLog`.
+Key entities: `User`, `Puzzle`, `Category`, `Reward`, `RewardClaim`, `TimeTrial`, `Progress`.
+
+Schema changes are versioned through TypeORM migrations; see
+[Database schema and migrations](database-schema.md) for the core ER
+diagram, migration commands, and the idempotent seed dataset.
 
 Configuration via environment variables:
 
@@ -224,16 +213,18 @@ DATABASE_HOST=localhost
 DATABASE_PORT=5432
 DATABASE_NAME=stellarshunts
 DATABASE_SYNC=true       # Auto-sync entities (dev only)
-DATABASE_LOAD=true        # Auto-load entities
+DATABASE_LOAD=true       # Auto-load entities
 ```
 
 ### API Design
 
 - **RESTful** endpoints organized by resource (no global prefix — e.g., `/puzzle-categories`, `/rewards`, `/auth`)
-- **Authentication** via JWT tokens (Bearer header) or session cookies
+- **Authentication** via JWT tokens (Bearer header)
 - **Swagger** documentation at `http://localhost:3001/api/docs`
 - **Rate limiting** applied to auth and claim endpoints
 - **WebSocket** connections for multiplayer queue via Socket.IO
+
+See [`docs/api.md`](api.md) for the full endpoint reference table.
 
 ## Onchain Architecture
 

@@ -9,15 +9,21 @@ const LoadingSpinner = ({ className, size = "md" }) => {
   };
 
   return (
-    <div className={cn("flex items-center justify-center", className)}>
+    <div
+      role="status"
+      aria-live="polite"
+      className={cn("flex items-center justify-center", className)}
+    >
       <div
+        aria-hidden="true"
         className={cn(
           "animate-spin rounded-full border-2 border-gray-300 border-t-blue-600",
           sizeClasses[size]
         )}
       />
+      <span className="sr-only">Loading</span>
     </div>
   );
 };
 
-export default LoadingSpinner; 
+export default LoadingSpinner;

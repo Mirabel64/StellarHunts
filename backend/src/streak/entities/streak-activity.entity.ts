@@ -10,7 +10,7 @@ export enum ActivityType {
 }
 
 @Entity("streak_activities")
-@Index(["userId", "activityDate"])
+@Index(["userId", "activityDate", "activityType"], { unique: true })
 @Index(["streakId"])
 @Index(["activityType"])
 export class StreakActivity {
@@ -24,7 +24,7 @@ export class StreakActivity {
   @JoinColumn({ name: "streakId" })
   streak: Streak
 
-  @Column({ type: "uuid" })
+  @Column({ type: "uuid", length: 128 })
   userId: string
 
   @Column({ type: "date" })

@@ -9,7 +9,11 @@ import {
   HttpStatus,
   Logger,
   BadRequestException,
+  UseGuards,
 } from '@nestjs/common';
+import { AuthGuard } from '@nestjs/passport';
+import { OwnershipGuard } from '../common/guards/ownership.guard';
+import { Ownership } from '../common/decorators/ownership.decorator';
 import { RewardShopService, ShopItem, Purchase } from './reward-shop.service';
 import {
   IsString,
@@ -52,6 +56,10 @@ class PurchaseItemDto {
   @IsNotEmpty()
   @IsString()
   itemId: string;
+
+  @IsOptional()
+  @IsString()
+  idempotencyKey?: string;
 }
 
 @Controller('reward-shop')
@@ -81,15 +89,26 @@ export class RewardShopController {
 
   @Post('purchase')
   @HttpCode(HttpStatus.CREATED)
+  @UseGuards(AuthGuard('jwt'), OwnershipGuard)
+  @Ownership({ body: 'userId' })
   purchaseItem(@Body() purchaseDto: PurchaseItemDto): Purchase {
     this.logger.log(
       `Received purchase request: ${JSON.stringify(purchaseDto)}`,
     );
-    const { userId, itemId } = purchaseDto;
-    return this.rewardShopService.purchaseItem(userId, itemId);
+    const { userId, itemId, idempotencyKey } = purchaseDto;
+    return this.rewardShopService.purchaseItem(userId, itemId, idempotencyKey);
+  }
+
+  @Get('purchases/:purchaseId')
+  @UseGuards(AuthGuard('jwt'))
+  getPurchaseById(@Param('purchaseId') purchaseId: string): Purchase {
+    this.logger.log(`Received request for purchase by ID: ${purchaseId}`);
+    return this.rewardShopService.getPurchaseById(purchaseId);
   }
 
   @Get('users/:userId/points')
+  @UseGuards(AuthGuard('jwt'), OwnershipGuard)
+  @Ownership({ param: 'userId' })
   getUserPoints(@Param('userId') userId: string): {
     userId: string;
     points: number;
@@ -101,6 +120,8 @@ export class RewardShopController {
 
   @Post('users/:userId/add-points')
   @HttpCode(HttpStatus.NO_CONTENT)
+  @UseGuards(AuthGuard('jwt'), OwnershipGuard)
+  @Ownership({ param: 'userId' })
   addPoints(
     @Param('userId') userId: string,
     @Body('amount') amount: number,

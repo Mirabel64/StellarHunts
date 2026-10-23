@@ -1,0 +1,146 @@
+# Release workflow — triggered by a pushed semver tag (vX.Y.Z), or run
+# manually with an explicit version.
+#
+# Usage (tag-driven, preferred):
+#   1. Prepare the release locally:
+#         npm run release:prepare -- minor
+#   2. Review the version bump + CHANGELOG.md diff, commit, then tag:
+#         git commit -am "chore(release): vX.Y.Z"
+#         git tag -a vX.Y.Z -m "Release vX.Y.Z"
+#         git push origin main --follow-tags
+#   3. This workflow builds every artifact, validates that the tag matches the
+#      workspace versions, generates the release notes from conventional
+#      commits, and publishes the GitHub Release.
+#
+# The manual trigger is for re-running a release (for example after fixing a
+# build failure) without moving the tag. It refuses to publish when the
+# workspace versions do not already equal the requested version.
+
+name: Release
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release (x.y.z, without the leading v)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+        with:
+          # Fetch all history so git-cliff / auto-changelog can read commits
+          fetch-depth: 0
+
+      - name: Resolve release version
+        id: tag
+        env:
+          INPUT_VERSION: ${{ github.event.inputs.version }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          if [ -n "$INPUT_VERSION" ]; then
+            VERSION="${INPUT_VERSION#v}"
+          else
+            VERSION="${REF_NAME#v}"
+          fi
+
+          if ! printf '%s' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::'$VERSION' is not a semver version (expected x.y.z)"
+            exit 1
+          fi
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Verify workspace versions match the release
+        run: node scripts/check-release-version.mjs "${{ steps.tag.outputs.version }}"
+
+      # ── Install toolchains ────────────────────────────────
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
+        with:
+          targets: wasm32v1-none
+
+      - name: Setup Node.js
+        uses: actions/setup-node@60edb5dd545a775178f52524783378180af0d1f8 # v4.0.2
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            backend/package-lock.json
+
+      # ── Install dependencies ──────────────────────────────
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: npm ci
+
+      # ── Build all artifacts ───────────────────────────────
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build
+
+      - name: Build backend
+        working-directory: backend
+        run: npm run build
+
+      - name: Build onchain contracts
+        working-directory: onchain
+        run: cargo build --workspace --target wasm32v1-none --release --locked
+
+      - name: Run onchain tests
+        working-directory: onchain
+        run: cargo test --workspace --locked
+
+      - name: Verify wasm artifacts were produced
+        working-directory: onchain
+        run: |
+          for f in stellar_hunts stellar_hunts_nft stellar_hunts_receiver; do
+            test -s "target/wasm32v1-none/release/${f}.wasm" \
+              || { echo "::error::missing or empty artifact: ${f}.wasm"; exit 1; }
+          done
+
+      # ── Generate changelog ────────────────────────────────
+      # Same generator developers run locally, so the reviewed
+      # CHANGELOG.md section and the published release notes cannot
+      # diverge. See scripts/changelog.mjs.
+      - name: Generate changelog
+        run: |
+          node scripts/changelog.mjs \
+            --version "${{ steps.tag.outputs.version }}" \
+            --notes > /tmp/release-notes.md
+
+          if [ ! -s /tmp/release-notes.md ]; then
+            echo "::error::Changelog generation produced no content"
+            exit 1
+          fi
+
+      # ── Create GitHub Release ─────────────────────────────
+      - name: Create Release
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
+        with:
+          tag_name: v${{ steps.tag.outputs.version }}
+          name: v${{ steps.tag.outputs.version }}
+          body_path: /tmp/release-notes.md
+          draft: false
+          prerelease: false
+          generate_release_notes: false
+          files: |
+            onchain/target/wasm32v1-none/release/stellar_hunts.wasm
+            onchain/target/wasm32v1-none/release/stellar_hunts_nft.wasm
+            onchain/target/wasm32v1-none/release/stellar_hunts_receiver.wasm
+          fail_on_unmatched_files: true

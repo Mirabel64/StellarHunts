@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json.schemastore.org/performance-budget",
+  "_comment": [
+    "Performance budgets for StellarHunts (issue #765).",
+    "",
+    "These values are read by .github/workflows/performance-budget.yml.",
+    "Changing a budget here automatically propagates to CI — no workflow",
+    "edit is required.",
+    "",
+    "javascript.maxBundleSizeKB",
+    "  Upper limit for the 'First Load JS' column of any route reported",
+    "  by `next build`.  500 kB gives room for the Stellar/Freighter SDK",
+    "  while still being well inside Google's recommended ceiling.",
+    "",
+    "javascript.maxSharedChunkSizeKB",
+    "  Upper limit for 'First Load JS shared by all' — the cumulative",
+    "  shared bundle that every page pays regardless of route.",
+    "",
+    "lcp.maxLCPMs",
+    "  Largest Contentful Paint threshold in milliseconds.  2500 ms maps",
+    "  to Google's 'Good' boundary (≤ 2.5 s) for Core Web Vitals."
+  ],
+  "budgets": {
+    "javascript": {
+      "maxBundleSizeKB": 500,
+      "maxSharedChunkSizeKB": 300,
+      "notes": "Covers First-Load JS per route and the shared chunk. Increase only after a documented justification (ADR or issue comment)."
+    },
+    "lcp": {
+      "maxLCPMs": 2500,
+      "notes": "Google Core Web Vitals 'Good' threshold. Measured by Lighthouse CI against the production build served locally."
+    }
+  },
+  "enforcement": {
+    "failOnBudgetExceeded": true,
+    "warnBeforePercent": 80,
+    "notes": "warnBeforePercent: a warning annotation is emitted (but the build does not fail) when usage exceeds 80% of a budget. This gives early visibility before a hard failure."
+  },
+  "documentation": {
+    "workflow": ".github/workflows/performance-budget.yml",
+    "issue": "https://github.com/UnityChainxx/StellarHunts/issues/765",
+    "updateProcess": "To increase a budget, open a PR that modifies this file, explains why the increase is justified, and is approved by a frontend maintainer."
+  }
+}
